@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Main where
+import Draw
+import DataTypes
 
 import qualified SDL
 import qualified SDL.Font
@@ -20,31 +21,6 @@ import Data.Bifunctor (second)
   Split main file
 -}
 
-data WindowType = Default
-
-data Component = Button Color | Text T.Text Color [Texture]
-
-data Window = Window {
-  windowID :: ID,
-  dimensions :: Rectangle CInt,
-  titleBarHeight :: CInt,
-  beingDragged :: Bool,
-  borderColor :: Color,
-  titleBarFillColor :: Color,
-  components :: [(Component, Rectangle CInt, Window -> Window)]
-}
-
-data GUI = GUI {
-  windows :: [Window],
-  lastWindowID :: ID
-}
-
-type ID = Int
-type Color = SDL.V4 Word8
-
-red :: Color
-red = SDL.V4 255 0 0 0
-
 white :: Color
 white = SDL.V4 255 255 255 0
 
@@ -57,25 +33,57 @@ black = SDL.V4 0 0 0 0
 green :: Color
 green = SDL.V4 32 194 14 0
 
-fontSize :: CInt
-fontSize = 12
-
 emptyGUI :: GUI
 emptyGUI = GUI { windows = [], lastWindowID = 0 }
 
 maxDimension :: Int
 maxDimension = 32768
 
-createWindow :: ID -> Rectangle CInt -> CInt -> Color ->
-             Color -> [(Component, Rectangle CInt, Window -> Window)] -> (Window, ID)
-createWindow wID dmensions tBarHeight bColor tBarColor comps =
-  (Window { windowID = wID, dimensions = dmensions,
-           beingDragged = False, borderColor = bColor, titleBarFillColor = tBarColor,
-           titleBarHeight = tBarHeight, components = comps}, wID + 1)
+windowSafetyCheck :: Window -> Window
+windowSafetyCheck w = let (Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = dimensions w
+                          tBarHeight = titleBarHeight w in
+                        if tBarHeight > dy
+                        then error "Window failed safety checks"
+                        else w
 
-newGUIWindow :: Window -> GUI -> GUI
-newGUIWindow w gui = let prevWindowList = windows gui in
-                  gui { windows = mappend [w] prevWindowList }
+unique :: (Eq a) => [a] -> Bool
+unique [] = True
+unique (x:xs) = if x `elem` xs
+                then False
+                else unique xs
+
+guiSafetyCheck :: GUI -> GUI
+guiSafetyCheck gui = let guiWindows = windows gui
+                         newGUIWindows = map windowSafetyCheck guiWindows
+                         doubleID = unique $ map windowID guiWindows in
+                       if doubleID
+                       then error "GUI Contains doubleID"
+                       else gui
+
+createWindow :: ID -> Rectangle CInt -> CInt -> Color ->
+                Color -> [(Component, Rectangle CInt, Window -> Window)] -> Window
+createWindow wID dmensions tBarHeight bColor tBarColor comps =
+  let newWindow = windowSafetyCheck $ Window { windowID = wID, dimensions = dmensions,
+                                         beingDragged = False, borderColor = bColor, titleBarFillColor = tBarColor,
+                                         titleBarHeight = tBarHeight, components = comps} in
+    newWindow
+
+{- This function is meant to be called whenever we need to modify an Window
+   eg. modifyWindow $ oldWindow { tBarHeight = 20 }                     -}
+modifyWindow :: Window -> Window
+modifyWindow = windowSafetyCheck
+
+{- Takes a window and returns a GUI containing that window and an updated ID record -}
+addWindowToGUI :: Window -> GUI -> GUI
+addWindowToGUI w gui = let newWindowsList = mappend [w] $ windows gui
+                           newID = lastWindowID gui + 1 in
+                      guiSafetyCheck $ gui { windows = newWindowsList, lastWindowID = newID }
+
+{- Creates a window and immediatly places it into a GUI -}
+createGUIWindow :: Rectangle CInt -> CInt -> Color -> Color -> [(Component, Rectangle CInt, Window -> Window)] -> GUI -> GUI
+createGUIWindow dmensions tBarHeight bColor tBarColor comps oldGUI = let newWindow = createWindow (lastWindowID oldGUI) dmensions tBarHeight
+                                                                                     bColor tBarColor comps in
+                                                                      addWindowToGUI newWindow oldGUI
 
 splitSurface :: SDL.Surface -> CInt -> CInt -> IO [SDL.Surface]
 splitSurface srcSurf width height = mapM (\(x, dx) -> do
@@ -100,95 +108,6 @@ createTextComponent render msg color font = do
   freeSurface surf
   return $ Text msg color texts
 
-{- Gets adequate source and destination rectangles to properly display text -}
-srcDestRects :: Int -> [(SDL.Texture, SDL.TextureInfo)] -> Rectangle CInt -> [((SDL.Texture, Rectangle CInt), Rectangle CInt)]
-srcDestRects msgLength texts rect = let dRecs = destRects msgLength rect
-                                        sRecs = srcRects msgLength texts dRecs in
-                                      zip sRecs dRecs
-
-srcRects :: Int -> [(SDL.Texture, SDL.TextureInfo)] -> [Rectangle CInt] -> [(SDL.Texture, Rectangle CInt)]
-srcRects msgLen = go 0 where
-  go x' texts destRects  | null destRects = [(text, Rectangle (SDL.P (SDL.V2 x' 0)) (SDL.V2 (x' - x) y))]
-                         | x' >= x = go 0 (tail texts) destRects
-                         | otherwise = (text, Rectangle (SDL.P (SDL.V2 x' 0)) (SDL.V2 textLineSize y)) : go nextX
-                                                                                                        texts
-                                                                                                        (tail destRects)
-    where nextX = x' + textLineSize
-          (Rectangle _ (SDL.V2 dx _)) = head destRects
-          lineSize = div dx fontSize
-          hdTexts = head texts
-          (text, textInfo) = hdTexts
-          (x, y) = (textureWidth textInfo, textureHeight textInfo)
-          charSize = div x (fromIntegral msgLen)
-          textLineSize = charSize * lineSize
-
-destRects :: Int -> Rectangle CInt -> [Rectangle CInt]
-destRects msgLen (Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
-  go 0 msgLen where
-  lineSize = div dx fontSize
-  go :: CInt -> Int -> [Rectangle CInt]
-  go n msgRem | msgRem == 0 = []
-              | msgRem <= fromIntegral lineSize = [Rectangle (SDL.P (SDL.V2 x (y + 12 * n)))
-                                                   (SDL.V2 (fromIntegral $ 12 * (msgRem + 1)) fontSize)]
-              | otherwise = Rectangle (SDL.P (SDL.V2 x (y + 12 * n))) (SDL.V2 dx fontSize)  : go (n + 1)
-                                                                                              (msgRem - fromIntegral lineSize)
-
-getDrawingRect :: Window -> Rectangle CInt
-getDrawingRect w = let (Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = dimensions w
-                       tBarH = titleBarHeight w in
-                     Rectangle (SDL.P (SDL.V2 (x + 1) (y + tBarH))) (SDL.V2 (dx - 2) (dy - tBarH - 1))
-
-drawComponent :: SDL.Renderer -> SDL.Font.Font -> (Component, Rectangle CInt, Window -> Window) -> IO ()
-drawComponent render _ (Button color, rect, _) = do
-  rendererDrawColor render SDL.$= color
-  drawRect render (Just rect)
-
-drawComponent render _ (Text msg color texts, rect, _) = do
-  rendererDrawColor render SDL.$= color
-  infoTexts <- mapM (\text -> do
-                        textInfo <- queryTexture text
-                        return (text, textInfo)) texts
-
-  let sdRects = srcDestRects (T.length msg) infoTexts rect
-      dRects = map snd sdRects
-
-  mapM_ (\((text, s), d) -> do
-            copy render text (Just s) (Just d)) sdRects
-
-  mapM_ (\d -> do
-            rendererDrawColor render SDL.$= red
-            drawRect render (Just d)) dRects
-
-  drawRect render (Just rect)
-
-drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
-drawWindow render font w = do
-  let outerRect = dimensions w
-      bColor = borderColor w
-      tColor = titleBarFillColor w
-      (Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) = outerRect
-      relTBarH = titleBarHeight w
-      absTBarH = relTBarH + y
-
-      -- We need those additions and subtractions so lines don't go over where they should go
-      (titleBarStart, titleBarEnd) = (SDL.P (SDL.V2 x absTBarH), SDL.P (SDL.V2 (x + dx - 1) absTBarH))
-      titleBarColorRect = Rectangle (SDL.P (SDL.V2 (x + 1) (y + 1))) (SDL.V2 (dx - 2) (relTBarH - 1))
-
-      comps = components w
-
-  rendererDrawColor render SDL.$= bColor
-  drawRect render (Just outerRect) --Draw Main Frame
-
-  drawLine render titleBarStart titleBarEnd -- Draw Title Bar line
-
-  rendererDrawColor render SDL.$= tColor
-  fillRect render (Just titleBarColorRect) -- Fill tile bar with color
-
-  mapM_ (drawComponent render font) comps
-
-drawGUI :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
-drawGUI render font gui = mapM_ (drawWindow render font) (windows gui)
-
 getFirst :: (a -> Bool) -> [a] -> Maybe a
 getFirst _ [] = Nothing
 getFirst fun (x:xs) = if fun x
@@ -206,7 +125,7 @@ clickInsideGUI :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
 clickInsideGUI click = getFirst (\x -> dimensions x `insideRectangle` click)
 
 setDragging :: Window -> GUI -> GUI
-setDragging oldWindow = updateGUI (oldWindow {beingDragged = True})
+setDragging oldWindow = updateGUI (modifyWindow $ oldWindow {beingDragged = True})
 
 -- Whether there is a window currently being dragged
 windowBeingDragged :: [Window] -> Bool
@@ -245,11 +164,10 @@ moveRectangle (dx, dy) (Rectangle (SDL.P (SDL.V2 x y)) botCorner) = Rectangle (S
 updateDraggedWindow :: SDL.V2 CInt -> Window -> Window
 updateDraggedWindow (SDL.V2 dx dy) draggedWindow = let (Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 width height)) = dimensions draggedWindow
                                                        oldComponents = components draggedWindow in
-                                           draggedWindow {dimensions = (Rectangle (SDL.P (SDL.V2 (x + dx) (y + dy)))
-                                                                                         (SDL.V2 width height)),
-                                                          components = fmap (\(comp, rect, f) -> (comp, moveRectangle (dx, dy) rect, f))
-                                                                            oldComponents}
-
+                                    modifyWindow $ draggedWindow {dimensions = (Rectangle (SDL.P (SDL.V2 (x + dx) (y + dy)))
+                                                                               (SDL.V2 width height)),
+                                                                  components = fmap (\(comp, rect, f) -> (comp, moveRectangle (dx, dy) rect, f))
+                                                                               oldComponents}
 
 guiHandleClick :: SDL.InputMotion -> SDL.MouseButton -> SDL.Point SDL.V2 CInt -> GUI -> GUI
 guiHandleClick motion button clickCoords oldGUI | motion == SDL.Pressed
@@ -261,7 +179,7 @@ guiHandleClick motion button clickCoords oldGUI | motion == SDL.Pressed
                                                   && button == SDL.ButtonLeft
                                                   && windowBeingDragged guiWindows =
                                                           let draggedWindow = fromJust $ getDraggedWindow guiWindows in
-                                                            updateGUI (draggedWindow { beingDragged = False }) oldGUI
+                                                            updateGUI (modifyWindow $ draggedWindow { beingDragged = False }) oldGUI
                                                 | otherwise = oldGUI
                                             where guiWindows = windows oldGUI
 
@@ -325,10 +243,9 @@ main = do
   SDL.Font.setHinting font SDL.Font.Mono
   size <- SDL.Font.getHinting font
   print size
-  let (startWindow, nextID) = createWindow 1 (Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500))
-                              10 white blue []
+  let startGUI = createGUIWindow (Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500))
+                                              10 white blue [] emptyGUI
 
-      startGUI = newGUIWindow startWindow emptyGUI
       newGUI = updateGUI (windowAddComponent (head $ windows startGUI) (Rectangle (SDL.P (SDL.V2 5 5)) (SDL.V2 490 440)) text id) startGUI
 
   loop renderer font newGUI

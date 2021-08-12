@@ -40,6 +40,8 @@ library
 executable GUI-exe
   main-is: Main.hs
   other-modules:
+      DataTypes
+      Draw
       Paths_GUI
   hs-source-dirs:
       app
