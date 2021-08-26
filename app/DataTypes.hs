@@ -6,21 +6,6 @@ import Foreign.C.Types
 
 import Data.Word (Word8)
 
---TODO: Place somewhere appropriate
-white :: Color
-white = SDL.V4 255 255 255 0
-
-blue :: Color
-blue = SDL.V4 0 0 255 0
-
-black :: Color
-black = SDL.V4 0 0 0 0
-
-green :: Color
-green = SDL.V4 32 194 14 0
-
-
-
 data WindowType = Default
 
 data Component = Button Color | Text T.Text Color [SDL.Texture]
@@ -56,4 +41,4 @@ type RenderTreeNode = (SDL.Rectangle CInt, HTML)
 type ID = Int
 type Color = SDL.V4 Word8
 
-type FontSize = Int
+type FontSize = CInt

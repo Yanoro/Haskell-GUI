@@ -1,5 +1,6 @@
 module Draw where
 
+import Constants
 import DataTypes
 import Parser
 import WindowUtils
@@ -11,25 +12,17 @@ import Foreign.C.Types
 
 import qualified Data.Text as T
 
-red :: DataTypes.Color
-red = SDL.V4 255 0 0 0
-
-fontSize :: CInt
-fontSize = 12
-
 genRenderTree :: SDL.Rectangle CInt -> [HTML] -> [SDL.Rectangle CInt]
 genRenderTree drawRect htmlDOC = snd $ foldl (\(oldDrawRect, prevRenderNodes) html ->
                                                 let (newDrawRect, newRenderNode) = genRenderNode oldDrawRect html in
                                                   (newDrawRect, mappend prevRenderNodes [newRenderNode])) (drawRect, []) htmlDOC
 
--- TODO: Make borderDistance global
 genRenderNode :: SDL.Rectangle CInt -> HTML -> (SDL.Rectangle CInt, SDL.Rectangle CInt)
 genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p _ fontSize) =
     let lineHSize = div dx (fromIntegral fontSize)
         lineVSize = fontSize
         amountOfLines = div (length p) (fromIntegral lineHSize)
         paragraphSize = fromIntegral $ amountOfLines * fromIntegral lineVSize
-        borderDistance = 10
         paragraphDistance = 20
         drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + paragraphSize + paragraphDistance)))
                     (SDL.V2 dx (dy - paragraphSize - borderDistance))
@@ -37,30 +30,30 @@ genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p _
                     (SDL.V2 (dx - 2 * borderDistance) paragraphSize) in
       (drawRect, renderNode)
 genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) Break =
-  let breakDistance = 50
-      borderDistance = 10
+  let breakDistance = 50 -- TODO: Make break distance parameter dependent
       drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + borderDistance + breakDistance)))
                                 (SDL.V2 dx (dy - breakDistance))
       renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
                                         (SDL.V2 (dx - 2 * borderDistance) breakDistance) in
     (drawRect, renderNode)
---TODO: Add safety checks to drawings outside the draw rectangle
 
+--TODO: Add safety checks to drawings outside the draw rectangle
 {- Gets adequate source and destination rectangles to properly display text -}
 srcDestRects :: FontSize -> Int -> [(SDL.Texture, SDL.TextureInfo)] -> SDL.Rectangle CInt -> [((SDL.Texture, SDL.Rectangle CInt), SDL.Rectangle CInt)]
 srcDestRects fSize msgLength texts rect = let dRecs = destRects fSize msgLength rect
-                                              sRecs = srcRects msgLength texts dRecs in
+                                              sRecs = srcRects fSize msgLength texts dRecs in
                                       zip sRecs dRecs
 
-srcRects :: Int -> [(SDL.Texture, SDL.TextureInfo)] -> [SDL.Rectangle CInt] -> [(SDL.Texture, SDL.Rectangle CInt)]
-srcRects msgLen = go 0 where
-  go x' texts destRects  | null destRects = [(text, SDL.Rectangle (SDL.P (SDL.V2 x' 0)) (SDL.V2 (x' - x) y))]
-                         | x' >= x = go 0 (tail texts) destRects
-                         | otherwise = (text, SDL.Rectangle (SDL.P (SDL.V2 x' 0)) (SDL.V2 textLineSize y)) : go nextX
+srcRects :: FontSize -> Int -> [(SDL.Texture, SDL.TextureInfo)] -> [SDL.Rectangle CInt] -> [(SDL.Texture, SDL.Rectangle CInt)]
+srcRects fSize msgLen = go 0 where
+  go x' texts dRects  | null dRects = [(text, SDL.Rectangle (SDL.P (SDL.V2 x' 0)) (SDL.V2 (x' - x) y))]
+                      | x' >= x = go 0 (tail texts) dRects
+                      | otherwise = (text, SDL.Rectangle (SDL.P (SDL.V2 x' 0)) (SDL.V2 textLineSize y)) : go nextX
                                                                                                         texts
-                                                                                                        (tail destRects)
+                                                                                                        (tail dRects)
     where nextX = x' + textLineSize
-          (SDL.Rectangle _ (SDL.V2 dx _)) = head destRects
+          (SDL.Rectangle _ (SDL.V2 dx _)) = head dRects
+          fontSize = fromIntegral fSize
           lineSize = div dx fontSize
           hdTexts = head texts
           (text, textInfo) = hdTexts
@@ -69,13 +62,13 @@ srcRects msgLen = go 0 where
           textLineSize = charSize * lineSize
 
 destRects :: FontSize -> Int -> SDL.Rectangle CInt -> [SDL.Rectangle CInt]
-destRects fSize msgLen (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
+destRects fSize msgLen (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) =
   go 0 msgLen where
-  lineSize = div dx fontSize
+  lineSize = div dx (fromIntegral fSize)
   go :: CInt -> Int -> [SDL.Rectangle CInt]
   go n msgRem | msgRem == 0 = []
               | msgRem <= fromIntegral lineSize = [SDL.Rectangle (SDL.P (SDL.V2 x (y + fontSize * n)))
-                                                   (SDL.V2 (fromIntegral $ fSize * (msgRem + 1)) fontSize)]
+                                                   (SDL.V2 (fromIntegral $ fSize * (fromIntegral msgRem + 1)) fontSize)]
               | otherwise = SDL.Rectangle (SDL.P (SDL.V2 x (y + fontSize * n))) (SDL.V2 dx fontSize)  : go (n + 1)
                                                                                               (msgRem - fromIntegral lineSize)
                             where fontSize = fromIntegral fSize
@@ -94,7 +87,7 @@ drawHTML render drawRect (textures:rest) (Paragraph p color fontSize) = do
             SDL.copy render text (Just s) (Just d)) sdRects
 
   mapM_ (\d -> do
-            SDL.rendererDrawColor render SDL.$= red
+            SDL.rendererDrawColor render SDL.$= Constants.red
             SDL.drawRect render (Just d)) dRects
 
   return rest

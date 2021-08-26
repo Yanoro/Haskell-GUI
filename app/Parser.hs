@@ -1,11 +1,12 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Parser where
 
-import DataTypes -- Remove later; placed due to color variables used in parse parameters
+import Constants
+import DataTypes
 
 import Control.Applicative
+import Data.Maybe
 import Data.Char
-import DataTypes
 
 instance Functor Parser where
   fmap f (Parser p) = Parser (\s -> [(f res, rest) | (res, rest) <- p s])
@@ -22,9 +23,7 @@ newtype Parser a = Parser {
   runParser :: String -> [(a, String)]
 }
 
-sampleText = "<p> This is a sample text! </p>\
-             \<br>\
-             \<p> And this is another one! </p>"
+sampleText = readFile "assets/testFile.html"
 
 {-
 <p> This is another sample text! </p>
@@ -55,8 +54,7 @@ parseHTML = filter (EmptySpace /=) <$> many parseTag
 
 safeTail :: [a] -> [a]
 safeTail [] = []
-safeTail (_:xs) | null xs = []
-                | otherwise = xs
+safeTail (_:xs) = xs
 
 -- There probably is a fancy way to create this function without the need for an argument
 skipCh :: a -> Parser a
@@ -66,27 +64,38 @@ skipCh a = Parser (\s -> let rest = safeTail s in
 parseCharacters :: Parser String
 parseCharacters = many $ satisfy (\c -> isAlpha c || isDigit c)
 
--- <p color=green size=12>
-parseTagParameters :: Parser String
-parseTagParameters = (\_ x -> x) <$> (string "color=" <|> string "size=") <*> parseCharacters
+boolToMaybe :: (a -> Bool) -> (a -> Maybe a)
+boolToMaybe f = \s -> case f s of
+                        False -> Nothing
+                        True -> Just s
 
--- TODO: Set default Color and fontSize
-sortParameters :: String -> String -> (Color, FontSize)
-sortParameters str1 str2 = let strlst = [str1, str2] in
-                             if not $ any (all isDigit) strlst && any (all isAlpha) strlst
-                             then (white, 12)
-                             else let color = case head $ filter (all isAlpha) strlst of
-                                                "green" -> green
-                                                "black" -> black
-                                                _       -> white
-                                      fontSize = read $ head $ filter (all isDigit) strlst in
-                                    (color, fontSize)
+attempt :: (a -> Maybe b) -> [a] -> Maybe b
+attempt _ [] = Nothing
+attempt f (x:xs) = case f x of
+                  Just a -> Just a
+                  _ -> attempt f xs
+
+maybeRead :: Maybe String -> Maybe FontSize
+maybeRead a = case a of
+                Nothing -> Nothing
+                Just a -> Just (read a)
+
+sortParameters :: [String] -> (Color, FontSize)
+sortParameters [] = (defaultColor, defaultFontSize)
+sortParameters strLst = let colorList :: [(String, Color)]
+                            colorList = [("red", red), ("white", white), ("blue", blue), ("black", black), ("green", green)]
+                            color = fromMaybe defaultColor $ attempt (`lookup` colorList) strLst
+                            font = fromMaybe defaultFontSize $ maybeRead $ attempt (boolToMaybe $ all isDigit) strLst in
+                          (color, font)
+
+parseTagParameters :: Parser String
+parseTagParameters = (\_ _ x -> x) <$> skipSpaces <*> (string "color=" <|> string "size=") <*> parseCharacters
 
 parseParagraph :: Parser HTML
-parseParagraph = (\_ _ param1 _ param2 _ text -> let (color, fontSize) = sortParameters param1 param2 in
-                                                   Paragraph text color fontSize)
-          <$> startTag <*> skipSpaces <*> parseTagParameters <*> skipSpaces <*> parseTagParameters <*> parseUntil2 ">" <*> parseUntil2 "</p>"
-  where startTag = string "<p"
+parseParagraph = (\_ params _ text -> let (color, fontSize) = sortParameters params in
+                                        Paragraph text color fontSize)
+          <$> string "<p" <*> many parseTagParameters <*> parseUntil2 ">" <*> parseUntil2 "</p>"
+
 
 parseBreak :: Parser HTML
 parseBreak = replace Break "<br>"

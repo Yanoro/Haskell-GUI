@@ -4,6 +4,7 @@ import Draw
 import DataTypes
 import Parser
 import WindowUtils
+import Constants
 
 import qualified SDL
 import qualified SDL.Font
@@ -11,12 +12,12 @@ import qualified SDL.Font
 import SDL.Video.Renderer
 import Control.Monad
 
-
 {- TODO:
   Add component safety checks
   Split main file
   Add dynamic events to the windows
-  tags should allow changing the fontSize, color, eg: <p color=green fontsize=12>
+  break tag parameters
+  weird rectangles
 -}
 
 loop :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
@@ -39,9 +40,11 @@ loop render font gui = do
       quitKeyPressed = any quitKey events
       newGUI = foldr (guiHandleEvent . SDL.eventPayload) gui events
 
+  {-
   if any handleMouse events then
     print $ any handleMouse events
   else return ()
+  -}
 
   SDL.rendererDrawColor render SDL.$= SDL.V4 0 0 0 0
 
@@ -66,7 +69,7 @@ main = do
 
   SDL.Font.setHinting font SDL.Font.Mono
   size <- SDL.Font.getHinting font
-  print size
+
   let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts)) (Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500))
                         10 white blue [] emptyGUI
 
