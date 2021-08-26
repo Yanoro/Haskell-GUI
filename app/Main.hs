@@ -39,7 +39,6 @@ loop render font gui = do
       quitKeyPressed = any quitKey events
       newGUI = foldr (guiHandleEvent . SDL.eventPayload) gui events
 
-
   if any handleMouse events then
     print $ any handleMouse events
   else return ()
@@ -70,7 +69,6 @@ main = do
   print size
   let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts)) (Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500))
                         10 white blue [] emptyGUI
-
 
   loop renderer font startGUI
   SDL.destroyWindow window

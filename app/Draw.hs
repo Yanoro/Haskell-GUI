@@ -9,7 +9,6 @@ import SDL.Font
 import Control.Monad
 import Foreign.C.Types
 
-
 import qualified Data.Text as T
 
 red :: DataTypes.Color
@@ -25,8 +24,8 @@ genRenderTree drawRect htmlDOC = snd $ foldl (\(oldDrawRect, prevRenderNodes) ht
 
 -- TODO: Make borderDistance global
 genRenderNode :: SDL.Rectangle CInt -> HTML -> (SDL.Rectangle CInt, SDL.Rectangle CInt)
-genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p) =
-    let lineHSize = div dx fontSize
+genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p _ fontSize) =
+    let lineHSize = div dx (fromIntegral fontSize)
         lineVSize = fontSize
         amountOfLines = div (length p) (fromIntegral lineHSize)
         paragraphSize = fromIntegral $ amountOfLines * fromIntegral lineVSize
@@ -35,7 +34,7 @@ genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p) 
         drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + paragraphSize + paragraphDistance)))
                     (SDL.V2 dx (dy - paragraphSize - borderDistance))
         renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
-                    (SDL.V2 (dx - borderDistance) paragraphSize) in
+                    (SDL.V2 (dx - 2 * borderDistance) paragraphSize) in
       (drawRect, renderNode)
 genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) Break =
   let breakDistance = 50
@@ -48,9 +47,9 @@ genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) Break =
 --TODO: Add safety checks to drawings outside the draw rectangle
 
 {- Gets adequate source and destination rectangles to properly display text -}
-srcDestRects :: Int -> [(SDL.Texture, SDL.TextureInfo)] -> SDL.Rectangle CInt -> [((SDL.Texture, SDL.Rectangle CInt), SDL.Rectangle CInt)]
-srcDestRects msgLength texts rect = let dRecs = destRects msgLength rect
-                                        sRecs = srcRects msgLength texts dRecs in
+srcDestRects :: FontSize -> Int -> [(SDL.Texture, SDL.TextureInfo)] -> SDL.Rectangle CInt -> [((SDL.Texture, SDL.Rectangle CInt), SDL.Rectangle CInt)]
+srcDestRects fSize msgLength texts rect = let dRecs = destRects fSize msgLength rect
+                                              sRecs = srcRects msgLength texts dRecs in
                                       zip sRecs dRecs
 
 srcRects :: Int -> [(SDL.Texture, SDL.TextureInfo)] -> [SDL.Rectangle CInt] -> [(SDL.Texture, SDL.Rectangle CInt)]
@@ -69,25 +68,26 @@ srcRects msgLen = go 0 where
           charSize = div x (fromIntegral msgLen)
           textLineSize = charSize * lineSize
 
-destRects :: Int -> SDL.Rectangle CInt -> [SDL.Rectangle CInt]
-destRects msgLen (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
+destRects :: FontSize -> Int -> SDL.Rectangle CInt -> [SDL.Rectangle CInt]
+destRects fSize msgLen (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
   go 0 msgLen where
   lineSize = div dx fontSize
   go :: CInt -> Int -> [SDL.Rectangle CInt]
   go n msgRem | msgRem == 0 = []
-              | msgRem <= fromIntegral lineSize = [SDL.Rectangle (SDL.P (SDL.V2 x (y + 12 * n)))
-                                                   (SDL.V2 (fromIntegral $ 12 * (msgRem + 1)) fontSize)]
-              | otherwise = SDL.Rectangle (SDL.P (SDL.V2 x (y + 12 * n))) (SDL.V2 dx fontSize)  : go (n + 1)
+              | msgRem <= fromIntegral lineSize = [SDL.Rectangle (SDL.P (SDL.V2 x (y + fontSize * n)))
+                                                   (SDL.V2 (fromIntegral $ fSize * (msgRem + 1)) fontSize)]
+              | otherwise = SDL.Rectangle (SDL.P (SDL.V2 x (y + fontSize * n))) (SDL.V2 dx fontSize)  : go (n + 1)
                                                                                               (msgRem - fromIntegral lineSize)
+                            where fontSize = fromIntegral fSize
 
 -- Draws a HTML Tag, "consuming" a texture if needed
 drawHTML :: SDL.Renderer -> SDL.Rectangle CInt -> [[SDL.Texture]] -> HTML -> IO [[SDL.Texture]]
-drawHTML render drawRect (textures:rest) (Paragraph p) = do
-  SDL.rendererDrawColor render SDL.$= SDL.V4 255 255 255 0 -- TODO: Change later
+drawHTML render drawRect (textures:rest) (Paragraph p color fontSize) = do
+  SDL.rendererDrawColor render SDL.$= color
   infoTexts <- mapM (\text -> do
                         textInfo <- SDL.queryTexture text
                         return (text, textInfo)) textures
-  let sdRects = srcDestRects (T.length $ T.pack p) infoTexts drawRect
+  let sdRects = srcDestRects fontSize (T.length $ T.pack p) infoTexts drawRect
       dRects = map snd sdRects
 
   mapM_ (\((text, s), d) -> do
@@ -111,29 +111,6 @@ drawWindowContents render _ drawRect (HTMLWindow (htmlDOC, texts)) = do
   mapM_ (\rect -> do
             SDL.drawRect render (Just rect)) renderTree
   return ()
-
-drawComponent :: SDL.Renderer -> SDL.Font.Font -> (Component, SDL.Rectangle CInt, Window -> Window) -> IO ()
-drawComponent render _ (DataTypes.Button color, rect, _) = do
-  SDL.rendererDrawColor render SDL.$= color
-  SDL.drawRect render (Just rect)
-
-drawComponent render _ (Text msg color texts, rect, _) = do
-  SDL.rendererDrawColor render SDL.$= color
-  infoTexts <- mapM (\text -> do
-                        textInfo <- SDL.queryTexture text
-                        return (text, textInfo)) texts
-
-  let sdRects = srcDestRects (T.length msg) infoTexts rect
-      dRects = map snd sdRects
-
-  mapM_ (\((text, s), d) -> do
-            SDL.copy render text (Just s) (Just d)) sdRects
-
-  mapM_ (\d -> do
-            SDL.rendererDrawColor render SDL.$= red
-            SDL.drawRect render (Just d)) dRects
-
-  SDL.drawRect render (Just rect)
 
 drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
 drawWindow render font w = do
@@ -171,16 +148,15 @@ genHTMLTextures :: SDL.Renderer -> SDL.Font.Font -> [HTML] -> IO [[SDL.Texture]]
 genHTMLTextures render font htmlDOC = do
   texts <- mapM go htmlDOC
   return $ filter ([] /=) texts where
-  go (Paragraph p) = do
+  go (Paragraph p color _) = do
     let p' = T.pack p
-    surf <- SDL.Font.blended font white p'
+    surf <- SDL.Font.blended font color p'
     (SDL.V2 width height) <- SDL.surfaceDimensions surf
     surfaces <- if width > fromIntegral maxDimension then splitSurface surf (fromIntegral width) height else return [surf]
     texts <- mapM (SDL.createTextureFromSurface render) surfaces
     SDL.freeSurface surf
     return texts
   go Break = return []
-
 
 drawGUI :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
 drawGUI render font gui = mapM_ (drawWindow render font) (windows gui)

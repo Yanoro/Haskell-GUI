@@ -1,6 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Parser where
 
+import DataTypes -- Remove later; placed due to color variables used in parse parameters
+
 import Control.Applicative
 import Data.Char
 import DataTypes
@@ -61,10 +63,30 @@ skipCh :: a -> Parser a
 skipCh a = Parser (\s -> let rest = safeTail s in
                            [(a, rest)])
 
+parseCharacters :: Parser String
+parseCharacters = many $ satisfy (\c -> isAlpha c || isDigit c)
+
+-- <p color=green size=12>
+parseTagParameters :: Parser String
+parseTagParameters = (\_ x -> x) <$> (string "color=" <|> string "size=") <*> parseCharacters
+
+-- TODO: Set default Color and fontSize
+sortParameters :: String -> String -> (Color, FontSize)
+sortParameters str1 str2 = let strlst = [str1, str2] in
+                             if not $ any (all isDigit) strlst && any (all isAlpha) strlst
+                             then (white, 12)
+                             else let color = case head $ filter (all isAlpha) strlst of
+                                                "green" -> green
+                                                "black" -> black
+                                                _       -> white
+                                      fontSize = read $ head $ filter (all isDigit) strlst in
+                                    (color, fontSize)
+
 parseParagraph :: Parser HTML
-parseParagraph = liftA3 (\_ y _ -> Paragraph y) startTag (parseUntil "</p>") endTag
-  where startTag = string "<p>"
-        endTag   = string "</p>"
+parseParagraph = (\_ _ param1 _ param2 _ text -> let (color, fontSize) = sortParameters param1 param2 in
+                                                   Paragraph text color fontSize)
+          <$> startTag <*> skipSpaces <*> parseTagParameters <*> skipSpaces <*> parseTagParameters <*> parseUntil2 ">" <*> parseUntil2 "</p>"
+  where startTag = string "<p"
 
 parseBreak :: Parser HTML
 parseBreak = replace Break "<br>"
@@ -75,12 +97,16 @@ parseButton = replace HButton "<button>"
 replace :: a -> String -> Parser a
 replace a str = Parser (\s -> [(a, rest) | (_, rest) <- runParser (string str) s])
 
---Probably rewrite this
 satisfy :: (Char -> Bool) -> Parser Char
 satisfy op = Parser (\s -> [(res, rest) | let (res, rest) = (head s, tail s), op res])
 
 parseWord :: Parser String
 parseWord = many $ satisfy isAlpha
+
+-- Same as parseUntil but removes the stopStr from the rest e.g:
+-- runParser (parseUntil2 "STOP") "test STOP bro" = [("test ", " bro")]
+parseUntil2 :: String -> Parser String
+parseUntil2 stopStr = Parser (\s -> [(res, drop (length stopStr) rest) | (res, rest) <- runParser (parseUntil stopStr) s])
 
 parseUntil :: String -> Parser String
 parseUntil stopStr = Parser (\s -> let (res, rest) = go s "" in

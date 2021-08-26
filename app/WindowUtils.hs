@@ -7,18 +7,6 @@ import Foreign.C.Types
 import SDL.Video.Renderer
 import Data.Maybe
 
-white :: Color
-white = SDL.V4 255 255 255 0
-
-blue :: Color
-blue = SDL.V4 0 0 255 0
-
-black :: Color
-black = SDL.V4 0 0 0 0
-
-green :: Color
-green = SDL.V4 32 194 14 0
-
 emptyGUI :: GUI
 emptyGUI = GUI { windows = [], lastWindowID = 0 }
 
