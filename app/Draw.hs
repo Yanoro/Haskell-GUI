@@ -1,10 +1,14 @@
 module Draw where
 
 import DataTypes
+import Parser
+import WindowUtils
 
 import qualified SDL
 import SDL.Font
+import Control.Monad
 import Foreign.C.Types
+
 
 import qualified Data.Text as T
 
@@ -13,6 +17,35 @@ red = SDL.V4 255 0 0 0
 
 fontSize :: CInt
 fontSize = 12
+
+genRenderTree :: SDL.Rectangle CInt -> [HTML] -> [SDL.Rectangle CInt]
+genRenderTree drawRect htmlDOC = snd $ foldl (\(oldDrawRect, prevRenderNodes) html ->
+                                                let (newDrawRect, newRenderNode) = genRenderNode oldDrawRect html in
+                                                  (newDrawRect, mappend prevRenderNodes [newRenderNode])) (drawRect, []) htmlDOC
+
+-- TODO: Make borderDistance global
+genRenderNode :: SDL.Rectangle CInt -> HTML -> (SDL.Rectangle CInt, SDL.Rectangle CInt)
+genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p) =
+    let lineHSize = div dx fontSize
+        lineVSize = fontSize
+        amountOfLines = div (length p) (fromIntegral lineHSize)
+        paragraphSize = fromIntegral $ amountOfLines * fromIntegral lineVSize
+        borderDistance = 10
+        paragraphDistance = 20
+        drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + paragraphSize + paragraphDistance)))
+                    (SDL.V2 dx (dy - paragraphSize - borderDistance))
+        renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
+                    (SDL.V2 (dx - borderDistance) paragraphSize) in
+      (drawRect, renderNode)
+genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) Break =
+  let breakDistance = 50
+      borderDistance = 10
+      drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + borderDistance + breakDistance)))
+                                (SDL.V2 dx (dy - breakDistance))
+      renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
+                                        (SDL.V2 (dx - 2 * borderDistance) breakDistance) in
+    (drawRect, renderNode)
+--TODO: Add safety checks to drawings outside the draw rectangle
 
 {- Gets adequate source and destination rectangles to properly display text -}
 srcDestRects :: Int -> [(SDL.Texture, SDL.TextureInfo)] -> SDL.Rectangle CInt -> [((SDL.Texture, SDL.Rectangle CInt), SDL.Rectangle CInt)]
@@ -47,13 +80,40 @@ destRects msgLen (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
               | otherwise = SDL.Rectangle (SDL.P (SDL.V2 x (y + 12 * n))) (SDL.V2 dx fontSize)  : go (n + 1)
                                                                                               (msgRem - fromIntegral lineSize)
 
-getDrawingRect :: Window -> SDL.Rectangle CInt
-getDrawingRect w = let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = dimensions w
-                       tBarH = titleBarHeight w in
-                     SDL.Rectangle (SDL.P (SDL.V2 (x + 1) (y + tBarH))) (SDL.V2 (dx - 2) (dy - tBarH - 1))
+-- Draws a HTML Tag, "consuming" a texture if needed
+drawHTML :: SDL.Renderer -> SDL.Rectangle CInt -> [[SDL.Texture]] -> HTML -> IO [[SDL.Texture]]
+drawHTML render drawRect (textures:rest) (Paragraph p) = do
+  SDL.rendererDrawColor render SDL.$= SDL.V4 255 255 255 0 -- TODO: Change later
+  infoTexts <- mapM (\text -> do
+                        textInfo <- SDL.queryTexture text
+                        return (text, textInfo)) textures
+  let sdRects = srcDestRects (T.length $ T.pack p) infoTexts drawRect
+      dRects = map snd sdRects
+
+  mapM_ (\((text, s), d) -> do
+            SDL.copy render text (Just s) (Just d)) sdRects
+
+  mapM_ (\d -> do
+            SDL.rendererDrawColor render SDL.$= red
+            SDL.drawRect render (Just d)) dRects
+
+  return rest
+
+drawHTML _ _ textures _ = return textures
+
+--drawHTML render drawRect (textures) (Break) = return textures
+
+drawWindowContents :: SDL.Renderer -> SDL.Font.Font -> SDL.Rectangle CInt -> WType -> IO ()
+drawWindowContents render _ drawRect (HTMLWindow (htmlDOC, texts)) = do
+  let renderTree = genRenderTree drawRect htmlDOC
+  _ <- foldM (\textures (html, rect) -> do
+                 drawHTML render rect textures html) texts (zip htmlDOC renderTree)
+  mapM_ (\rect -> do
+            SDL.drawRect render (Just rect)) renderTree
+  return ()
 
 drawComponent :: SDL.Renderer -> SDL.Font.Font -> (Component, SDL.Rectangle CInt, Window -> Window) -> IO ()
-drawComponent render _ (Button color, rect, _) = do
+drawComponent render _ (DataTypes.Button color, rect, _) = do
   SDL.rendererDrawColor render SDL.$= color
   SDL.drawRect render (Just rect)
 
@@ -89,6 +149,8 @@ drawWindow render font w = do
       titleBarColorRect = SDL.Rectangle (SDL.P (SDL.V2 (x + 1) (y + 1))) (SDL.V2 (dx - 2) (relTBarH - 1))
 
       comps = components w
+      wType = windowType w
+      drawRect = getDrawingRect w
 
   SDL.rendererDrawColor render SDL.$= bColor
   SDL.drawRect render (Just outerRect) --Draw Main Frame
@@ -98,7 +160,27 @@ drawWindow render font w = do
   SDL.rendererDrawColor render SDL.$= tColor
   SDL.fillRect render (Just titleBarColorRect) -- Fill tile bar with color
 
-  mapM_ (drawComponent render font) comps
+  drawWindowContents render font drawRect wType
+--  mapM_ (drawComponent render font) comps
+
+-- Generates for each html tag their required textures, in this case only paragraph needs it.
+-- It's important that at the stage where the html gets drawn, the list of html tags given is the
+-- same as the one given given in this function, otherwise html tags are going to be drawn with other
+-- tag's textures
+genHTMLTextures :: SDL.Renderer -> SDL.Font.Font -> [HTML] -> IO [[SDL.Texture]]
+genHTMLTextures render font htmlDOC = do
+  texts <- mapM go htmlDOC
+  return $ filter ([] /=) texts where
+  go (Paragraph p) = do
+    let p' = T.pack p
+    surf <- SDL.Font.blended font white p'
+    (SDL.V2 width height) <- SDL.surfaceDimensions surf
+    surfaces <- if width > fromIntegral maxDimension then splitSurface surf (fromIntegral width) height else return [surf]
+    texts <- mapM (SDL.createTextureFromSurface render) surfaces
+    SDL.freeSurface surf
+    return texts
+  go Break = return []
+
 
 drawGUI :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
 drawGUI render font gui = mapM_ (drawWindow render font) (windows gui)

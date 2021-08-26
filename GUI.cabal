@@ -42,6 +42,8 @@ executable GUI-exe
   other-modules:
       DataTypes
       Draw
+      Parser
+      WindowUtils
       Paths_GUI
   hs-source-dirs:
       app
