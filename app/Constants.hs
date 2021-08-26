@@ -26,6 +26,9 @@ defaultColor = white
 defaultFontSize :: FontSize
 defaultFontSize = 12
 
+defaultBreakSize :: CInt
+defaultBreakSize = 50
+
 {- The distance between the borders of a window and newly placed content
    e.g Paragraphs, images etc -}
 borderDistance :: CInt

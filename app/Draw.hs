@@ -29,12 +29,11 @@ genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p _
         renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
                     (SDL.V2 (dx - 2 * borderDistance) paragraphSize) in
       (drawRect, renderNode)
-genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) Break =
-  let breakDistance = 50 -- TODO: Make break distance parameter dependent
-      drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + borderDistance + breakDistance)))
-                                (SDL.V2 dx (dy - breakDistance))
+genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Break breakSize) =
+  let drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + borderDistance + breakSize)))
+                                (SDL.V2 dx (dy - breakSize))
       renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
-                                        (SDL.V2 (dx - 2 * borderDistance) breakDistance) in
+                                        (SDL.V2 (dx - 2 * borderDistance) breakSize) in
     (drawRect, renderNode)
 
 --TODO: Add safety checks to drawings outside the draw rectangle
@@ -99,11 +98,10 @@ drawHTML _ _ textures _ = return textures
 drawWindowContents :: SDL.Renderer -> SDL.Font.Font -> SDL.Rectangle CInt -> WType -> IO ()
 drawWindowContents render _ drawRect (HTMLWindow (htmlDOC, texts)) = do
   let renderTree = genRenderTree drawRect htmlDOC
-  _ <- foldM (\textures (html, rect) -> do
+  foldM_ (\textures (html, rect) -> do
                  drawHTML render rect textures html) texts (zip htmlDOC renderTree)
   mapM_ (\rect -> do
             SDL.drawRect render (Just rect)) renderTree
-  return ()
 
 drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
 drawWindow render font w = do
@@ -149,7 +147,7 @@ genHTMLTextures render font htmlDOC = do
     texts <- mapM (SDL.createTextureFromSurface render) surfaces
     SDL.freeSurface surf
     return texts
-  go Break = return []
+  go (Break _) = return []
 
 drawGUI :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
 drawGUI render font gui = mapM_ (drawWindow render font) (windows gui)

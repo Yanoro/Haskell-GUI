@@ -22,9 +22,7 @@ windowSafetyCheck w = let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = 
 
 unique :: (Eq a) => [a] -> Bool
 unique [] = True
-unique (x:xs) = if x `elem` xs
-                then False
-                else unique xs
+unique (x:xs) = notElem x xs && unique xs
 
 guiSafetyCheck :: GUI -> GUI
 guiSafetyCheck gui = let guiWindows = windows gui
@@ -130,8 +128,8 @@ moveRectangle (dx, dy) (SDL.Rectangle (SDL.P (SDL.V2 x y)) botCorner) = SDL.Rect
 updateDraggedWindow :: SDL.V2 CInt -> Window -> Window
 updateDraggedWindow (SDL.V2 dx dy) draggedWindow = let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 width height)) = dimensions draggedWindow
                                                        oldComponents = components draggedWindow in
-                                    modifyWindow $ draggedWindow {dimensions = (SDL.Rectangle (SDL.P (SDL.V2 (x + dx) (y + dy)))
-                                                                               (SDL.V2 width height)),
+                                    modifyWindow $ draggedWindow {dimensions = SDL.Rectangle (SDL.P (SDL.V2 (x + dx) (y + dy)))
+                                                                               (SDL.V2 width height),
                                                                   components = fmap (\(comp, rect, f) -> (comp, moveRectangle (dx, dy) rect, f))
                                                                                oldComponents}
 

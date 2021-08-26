@@ -11,7 +11,7 @@ data WindowType = Default
 data Component = Button Color | Text T.Text Color [SDL.Texture]
 
 -- TODO: Change Paragraph to Text
-data HTML = EmptySpace | Paragraph String Color FontSize | Break | Img FilePath | HButton | HTMLDOC [HTML] deriving (Show, Eq)
+data HTML = EmptySpace | Paragraph String Color FontSize | Break CInt | Img FilePath | HButton | HTMLDOC [HTML] deriving (Show, Eq)
 
 {- The reason that we need a [[SDL.Texture]] is that we need to create multiple
    textures for a single paragraph so we can format it correctly, and since we

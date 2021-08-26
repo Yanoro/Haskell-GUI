@@ -78,8 +78,9 @@ attempt f (x:xs) = case f x of
 maybeRead :: Maybe String -> Maybe FontSize
 maybeRead a = case a of
                 Nothing -> Nothing
-                Just a -> Just (read a)
+                Just x -> Just (read x)
 
+--TODO: This function should be more general to make it easier to create other parameters
 sortParameters :: [String] -> (Color, FontSize)
 sortParameters [] = (defaultColor, defaultFontSize)
 sortParameters strLst = let colorList :: [(String, Color)]
@@ -88,17 +89,21 @@ sortParameters strLst = let colorList :: [(String, Color)]
                             font = fromMaybe defaultFontSize $ maybeRead $ attempt (boolToMaybe $ all isDigit) strLst in
                           (color, font)
 
-parseTagParameters :: Parser String
-parseTagParameters = (\_ _ x -> x) <$> skipSpaces <*> (string "color=" <|> string "size=") <*> parseCharacters
+parseParagraphParameters :: Parser String
+parseParagraphParameters = (\_ _ x -> x) <$> skipSpaces <*> (string "color=" <|> string "size=") <*> parseCharacters
 
 parseParagraph :: Parser HTML
 parseParagraph = (\_ params _ text -> let (color, fontSize) = sortParameters params in
                                         Paragraph text color fontSize)
-          <$> string "<p" <*> many parseTagParameters <*> parseUntil2 ">" <*> parseUntil2 "</p>"
+          <$> string "<p" <*> many parseParagraphParameters <*> parseUntil2 ">" <*> parseUntil2 "</p>"
 
+
+parseBreakParameters :: Parser String
+parseBreakParameters = (\_ _ params -> params) <$> skipSpaces <*> string "size=" <*> parseCharacters
 
 parseBreak :: Parser HTML
-parseBreak = replace Break "<br>"
+parseBreak = (\_ param _ -> let breakSize = fromMaybe defaultBreakSize $ maybeRead $ attempt (boolToMaybe $ all isDigit) [param] in
+                 Break breakSize) <$> string "<br" <*> parseBreakParameters <*> parseUntil2 ">"
 
 parseButton :: Parser HTML
 parseButton = replace HButton "<button>"

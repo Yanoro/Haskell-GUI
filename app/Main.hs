@@ -16,7 +16,6 @@ import Control.Monad
   Add component safety checks
   Split main file
   Add dynamic events to the windows
-  break tag parameters
   weird rectangles
 -}
 
@@ -68,7 +67,6 @@ main = do
   htmlTexts <- genHTMLTextures renderer font parsedHTML
 
   SDL.Font.setHinting font SDL.Font.Mono
-  size <- SDL.Font.getHinting font
 
   let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts)) (Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500))
                         10 white blue [] emptyGUI
