@@ -10,6 +10,7 @@ import SDL.Font
 import Control.Monad
 import Foreign.C.Types
 
+
 import qualified Data.Text as T
 
 genRenderTree :: SDL.Rectangle CInt -> [HTML] -> [SDL.Rectangle CInt]
@@ -120,8 +121,12 @@ drawWindow render font w = do
       wType = windowType w
       drawRect = getDrawingRect w
 
+      bSize = borderSize w
+      frameBorders = getRectBorders bSize outerRect
+
   SDL.rendererDrawColor render SDL.$= bColor
-  SDL.drawRect render (Just outerRect) --Draw Main Frame
+
+  mapM_ (SDL.drawRect render . Just) frameBorders --Draw Main Frame
 
   SDL.drawLine render titleBarStart titleBarEnd -- Draw Title Bar line
 
@@ -129,12 +134,13 @@ drawWindow render font w = do
   SDL.fillRect render (Just titleBarColorRect) -- Fill tile bar with color
 
   drawWindowContents render font drawRect wType
---  mapM_ (drawComponent render font) comps
+
 
 -- Generates for each html tag their required textures, in this case only paragraph needs it.
 -- It's important that at the stage where the html gets drawn, the list of html tags given is the
 -- same as the one given given in this function, otherwise html tags are going to be drawn with other
 -- tag's textures
+
 genHTMLTextures :: SDL.Renderer -> SDL.Font.Font -> [HTML] -> IO [[SDL.Texture]]
 genHTMLTextures render font htmlDOC = do
   texts <- mapM go htmlDOC

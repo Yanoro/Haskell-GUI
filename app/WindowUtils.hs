@@ -1,6 +1,7 @@
 module WindowUtils where
 
 import DataTypes
+import Parser
 
 import qualified SDL
 import Foreign.C.Types
@@ -32,12 +33,12 @@ guiSafetyCheck gui = let guiWindows = windows gui
                        then error "GUI Contains doubleID"
                        else gui
 
-createWindow :: ID -> WType -> SDL.Rectangle CInt -> CInt -> Color ->
+createWindow :: ID -> WType -> SDL.Rectangle CInt -> CInt -> CInt -> Color ->
                 Color -> [(Component, SDL.Rectangle CInt, Window -> Window)] -> Window
-createWindow wID wType dmensions tBarHeight bColor tBarColor comps =
-  let newWindow = windowSafetyCheck $ Window { windowID = wID, windowType = wType, dimensions = dmensions,
-                                               beingDragged = False, borderColor = bColor, titleBarFillColor = tBarColor,
-                                               titleBarHeight = tBarHeight, components = comps} in
+createWindow wID wType dmensions tBarHeight bSize bColor tBarColor comps =
+  let newWindow = windowSafetyCheck $ Window { windowID = wID, windowType = wType, dimensions = dmensions, borderSize = bSize,
+                                               beingDragged = False, beingExpanded = (False, NoBorder), borderColor = bColor,
+                                               titleBarFillColor = tBarColor, titleBarHeight = tBarHeight, components = comps} in
     newWindow
 
 {- This function is meant to be called whenever we need to modify an Window
@@ -49,12 +50,13 @@ modifyWindow = windowSafetyCheck
 addWindowToGUI :: Window -> GUI -> GUI
 addWindowToGUI w gui = let newWindowsList = mappend [w] $ windows gui
                            newID = lastWindowID gui + 1 in
-                      guiSafetyCheck $ gui { windows = newWindowsList, lastWindowID = newID }
+                         guiSafetyCheck $ gui { windows = newWindowsList, lastWindowID = newID }
 
 {- Creates a window and immediatly places it into a GUI -}
-createGUIWindow :: WType -> SDL.Rectangle CInt -> CInt -> Color -> Color -> [(Component, SDL.Rectangle CInt, Window -> Window)] -> GUI -> GUI
-createGUIWindow wType dmensions tBarHeight bColor tBarColor comps oldGUI = let newWindow = createWindow (lastWindowID oldGUI) wType
-                                                                                           dmensions tBarHeight bColor tBarColor comps in
+createGUIWindow :: WType -> SDL.Rectangle CInt -> CInt -> CInt -> Color -> Color ->
+                   [(Component, SDL.Rectangle CInt, Window -> Window)] -> GUI -> GUI
+createGUIWindow wType dmensions tBarHeight bSize bColor tBarColor comps oldGUI = let newWindow = createWindow (lastWindowID oldGUI) wType
+                                                                                           dmensions tBarHeight bSize bColor tBarColor comps in
                                                                       addWindowToGUI newWindow oldGUI
 
 splitSurface :: SDL.Surface -> CInt -> CInt -> IO [SDL.Surface]
@@ -75,6 +77,7 @@ getFirst fun (x:xs) = if fun x
                       then Just x
                       else getFirst fun xs
 
+-- !! This assumes that the first point is the upper left corner !!
 insideRectangle :: SDL.Rectangle CInt -> SDL.Point SDL.V2 CInt -> Bool
 insideRectangle (SDL.Rectangle (SDL.P (SDL.V2 xStart yStart)) (SDL.V2 width height)) (SDL.P (SDL.V2 x y)) =
   not $ x < xStart || y < yStart || x > xStart + width || y > yStart + height
@@ -82,15 +85,53 @@ insideRectangle (SDL.Rectangle (SDL.P (SDL.V2 xStart yStart)) (SDL.V2 width heig
 clickInsideGUI :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
 clickInsideGUI click = getFirst (\x -> dimensions x `insideRectangle` click)
 
+clickInsideBorder :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
+clickInsideBorder _ [] = Nothing
+clickInsideBorder click (window:rest) = let borders = getRectBorders (borderSize window) (dimensions window) in
+                                          if any (`insideRectangle` click) borders
+                                          then Just window
+                                          else clickInsideBorder click rest
+
+getRectBorders :: CInt -> SDL.Rectangle CInt -> [SDL.Rectangle CInt]
+getRectBorders bSize (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
+  let topBorder    = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) (y - bSize))) (SDL.V2 (dx + 2 * bSize) bSize)
+      bottomBorder = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) (y + dy))) (SDL.V2 (dx + 2 * bSize) bSize)
+      leftBorder   = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) y)) (SDL.V2 bSize dy)
+      rightBorder  = SDL.Rectangle (SDL.P (SDL.V2 (x + dx) y)) (SDL.V2 bSize dy) in
+    [leftBorder, topBorder, rightBorder, bottomBorder]
+
 setDragging :: Window -> GUI -> GUI
 setDragging oldWindow = updateGUI (modifyWindow $ oldWindow {beingDragged = True})
+
+unsetDragging :: Window -> GUI -> GUI
+unsetDragging oldWindow = updateGUI (modifyWindow $ oldWindow {beingDragged = False})
+
+setExpansion :: SDL.Point SDL.V2 CInt -> Window -> GUI -> GUI
+setExpansion click oldWindow =
+  let borders = getRectBorders (borderSize oldWindow) (dimensions oldWindow)
+      (SDL.Rectangle (SDL.P (SDL.V2 x' y')) _) = fromJust $ getFirst (`insideRectangle` click) borders
+      rectCornerTable = zip (map (\(SDL.Rectangle (SDL.P (SDL.V2 m n)) _) -> (m, n)) borders) [LeftBorder, TopBorder, RightBorder, BottomBorder]
+
+      clickedBorder = fromMaybe NoBorder $ lookup clickedBorderCoords rectCornerTable
+                where clickedBorderCoords = (x', y') in
+
+  updateGUI (modifyWindow $ oldWindow {beingExpanded = (True, clickedBorder)})
+
+unsetExpansion :: Window -> GUI -> GUI
+unsetExpansion oldWindow = updateGUI (modifyWindow $ oldWindow {beingExpanded = (False, NoBorder)})
 
 -- Whether there is a window currently being dragged
 windowBeingDragged :: [Window] -> Bool
 windowBeingDragged = any beingDragged
 
+windowBeingExpanded :: [Window] -> Bool
+windowBeingExpanded = any (fst . beingExpanded)
+
 getDraggedWindow :: [Window] -> Maybe Window
 getDraggedWindow = getFirst beingDragged
+
+getExpandedWindow :: [Window] -> Maybe Window
+getExpandedWindow = getFirst (fst . beingExpanded)
 
 gotSomething :: Maybe a -> Bool
 gotSomething (Just _) = True
@@ -101,6 +142,9 @@ getDrawingRect :: Window -> SDL.Rectangle CInt
 getDrawingRect w = let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = dimensions w
                        tBarH = titleBarHeight w in
                      SDL.Rectangle (SDL.P (SDL.V2 x (y + tBarH))) (SDL.V2 dx (dy - tBarH))
+
+replaceAtIndex :: Int -> a -> [a] -> [a]
+replaceAtIndex index newItem lst = a ++ (newItem:b) where (a, _:b) = splitAt index lst
 
 {- Add a component to a GUI. Input rectangle must be relative -}
 windowAddComponent :: Window -> SDL.Rectangle CInt -> Component -> (Window -> Window) -> Window
@@ -125,33 +169,52 @@ updateGUI newWindow gui = let oldWindows = windows gui in
 moveRectangle :: (CInt, CInt) -> SDL.Rectangle CInt -> SDL.Rectangle CInt
 moveRectangle (dx, dy) (SDL.Rectangle (SDL.P (SDL.V2 x y)) botCorner) = SDL.Rectangle (SDL.P (SDL.V2 (x + dx) (y + dy))) botCorner
 
-updateDraggedWindow :: SDL.V2 CInt -> Window -> Window
-updateDraggedWindow (SDL.V2 dx dy) draggedWindow = let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 width height)) = dimensions draggedWindow
-                                                       oldComponents = components draggedWindow in
-                                    modifyWindow $ draggedWindow {dimensions = SDL.Rectangle (SDL.P (SDL.V2 (x + dx) (y + dy)))
-                                                                               (SDL.V2 width height),
-                                                                  components = fmap (\(comp, rect, f) -> (comp, moveRectangle (dx, dy) rect, f))
-                                                                               oldComponents}
+updateDraggedWindow :: SDL.V2 CInt -> Window -> GUI -> GUI
+updateDraggedWindow (SDL.V2 dx dy) draggedWindow oldGUI =
+  let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 width height)) = dimensions draggedWindow in
+      updateGUI (modifyWindow $ draggedWindow {dimensions = SDL.Rectangle (SDL.P (SDL.V2 (x + dx) (y + dy)))
+                                                                                 (SDL.V2 width height)}) oldGUI
+
+updateExpandedWindow :: SDL.V2 CInt -> Window -> GUI -> GUI
+updateExpandedWindow (SDL.V2 mx my) expandedWindow oldGUI =
+  let (_, clickBorder) = beingExpanded expandedWindow
+      oldDimensions = dimensions expandedWindow
+      (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = oldDimensions
+      newDimensions = case clickBorder of
+                        RightBorder  -> SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 (dx + mx) (dy + my))
+                        BottomBorder -> SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 (dx + mx) (dy + my)) 
+                        LeftBorder   -> SDL.Rectangle (SDL.P (SDL.V2 (x + mx) (y + my))) (SDL.V2 (dx - mx) (dy - my))
+                        TopBorder    -> SDL.Rectangle (SDL.P (SDL.V2 (x + mx) (y + my))) (SDL.V2 (dx - mx) (dy - my))
+                        NoBorder     -> oldDimensions in
+    updateGUI (modifyWindow $ expandedWindow {dimensions = newDimensions}) oldGUI
 
 guiHandleClick :: SDL.InputMotion -> SDL.MouseButton -> SDL.Point SDL.V2 CInt -> GUI -> GUI
 guiHandleClick motion button clickCoords oldGUI | motion == SDL.Pressed
                                                   && button == SDL.ButtonLeft =
                                                           case clickInsideGUI clickCoords guiWindows of
-                                                            Nothing -> oldGUI
                                                             Just w -> setDragging w oldGUI
+                                                            Nothing -> case clickInsideBorder clickCoords guiWindows of
+                                                                         Nothing -> oldGUI
+                                                                         Just w -> setExpansion clickCoords w oldGUI
                                                 | motion == SDL.Released
                                                   && button == SDL.ButtonLeft
                                                   && windowBeingDragged guiWindows =
                                                           let draggedWindow = fromJust $ getDraggedWindow guiWindows in
-                                                            updateGUI (modifyWindow $ draggedWindow { beingDragged = False }) oldGUI
+                                                            unsetDragging draggedWindow oldGUI
+                                                | motion == SDL.Released
+                                                  && button == SDL.ButtonLeft
+                                                  && windowBeingExpanded guiWindows =
+                                                          let expandedWindow = fromJust $ getExpandedWindow guiWindows in
+                                                            unsetExpansion expandedWindow oldGUI
                                                 | otherwise = oldGUI
                                             where guiWindows = windows oldGUI
 
 guiHandleMotion :: SDL.V2 CInt -> GUI -> GUI
-guiHandleMotion motion oldGUI = if windowBeingDragged guiWindows
-                                then updateGUI (updateDraggedWindow motion (fromJust $ getDraggedWindow guiWindows)) oldGUI
-                                else oldGUI
-                              where guiWindows = windows oldGUI
+guiHandleMotion motion oldGUI | windowBeingDragged guiWindows = updateDraggedWindow motion (fromJust $ getDraggedWindow guiWindows) oldGUI
+                              | windowBeingExpanded guiWindows = updateExpandedWindow motion (fromJust $ getExpandedWindow guiWindows) oldGUI
+                              | otherwise = oldGUI
+                        where guiWindows = windows oldGUI
+
 
 guiHandleEvent :: SDL.EventPayload -> GUI -> GUI
 guiHandleEvent (SDL.MouseButtonEvent (SDL.MouseButtonEventData _ motion _ button _ clickCoords)) oldGUI =
@@ -159,3 +222,11 @@ guiHandleEvent (SDL.MouseButtonEvent (SDL.MouseButtonEventData _ motion _ button
 guiHandleEvent (SDL.MouseMotionEvent (SDL.MouseMotionEventData _ _ _ _ motion)) oldGUI =
                                                                 guiHandleMotion (fromIntegral <$> motion) oldGUI
 guiHandleEvent _ oldGUI = oldGUI
+
+{- Convenience function so we don't forget to load our variables
+   Remember that the order that the variables are given DO matter! -}
+
+loadHTMLFile :: FilePath -> [HTMLVar] -> IO String
+loadHTMLFile fileName vars = do
+  html <- readFile fileName
+  return $ loadVariables vars html

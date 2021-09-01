@@ -13,9 +13,12 @@ data Component = Button Color | Text T.Text Color [SDL.Texture]
 -- TODO: Change Paragraph to Text
 data HTML = EmptySpace | Paragraph String Color FontSize | Break CInt | Img FilePath | HButton | HTMLDOC [HTML] deriving (Show, Eq)
 
+data ClickedBorder = LeftBorder | TopBorder | RightBorder | BottomBorder | NoBorder deriving Show
+
 {- The reason that we need a [[SDL.Texture]] is that we need to create multiple
    textures for a single paragraph so we can format it correctly, and since we
-   need multiple paragraphs, we need [[SDL.Texture]]-}
+   need multiple paragraphs, we need [[SDL.Texture]] -}
+
 newtype WType = HTMLWindow ([HTML], [[SDL.Texture]])
 
 -- TODO: Remove components later
@@ -24,7 +27,9 @@ data Window = Window {
   windowType :: WType,
   dimensions :: SDL.Rectangle CInt,
   titleBarHeight :: CInt,
+  borderSize :: CInt,
   beingDragged :: Bool,
+  beingExpanded :: (Bool, ClickedBorder),
   borderColor :: Color,
   titleBarFillColor :: Color,
   components :: [(Component, SDL.Rectangle CInt, Window -> Window)]
@@ -42,3 +47,4 @@ type ID = Int
 type Color = SDL.V4 Word8
 
 type FontSize = CInt
+type HTMLVar = (String, String)

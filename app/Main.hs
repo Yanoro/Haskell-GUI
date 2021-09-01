@@ -14,9 +14,7 @@ import Control.Monad
 
 {- TODO:
   Add component safety checks
-  Split main file
   Add dynamic events to the windows
-  weird rectangles
 -}
 
 loop :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
@@ -28,14 +26,17 @@ loop render font gui = do
             SDL.keyboardEventKeyMotion keyboardEvent == SDL.Pressed &&
             SDL.keysymKeycode (SDL.keyboardEventKeysym keyboardEvent) == SDL.KeycodeEscape
           _ -> False
+      window = head $ windows newGUI
       handleMouse event =
         case SDL.eventPayload event of
-          SDL.MouseButtonEvent (SDL.MouseButtonEventData _ motion _ button _ coords)->
-                            if motion == SDL.Pressed && button == SDL.ButtonLeft
-                            then gotSomething $ clickInsideGUI (fmap fromIntegral coords) (windows gui)
-                            else False
+          SDL.MouseButtonEvent (SDL.MouseButtonEventData _ motion _ button _ coords) ->
+            do
+            mapM_ (print) $ getRectBorders 10 $ dimensions window
+            print coords
+--            print $ getFirst (`insideRectangle` (fromIntegral <$> coords)) $ getRectBorders 10 $ dimensions window
+          _ -> return ()
 
-          _ -> False
+--          _ -> False
       quitKeyPressed = any quitKey events
       newGUI = foldr (guiHandleEvent . SDL.eventPayload) gui events
 
@@ -44,8 +45,10 @@ loop render font gui = do
     print $ any handleMouse events
   else return ()
   -}
-
+  mapM_ handleMouse events
   SDL.rendererDrawColor render SDL.$= SDL.V4 0 0 0 0
+
+
 
   SDL.clear render
   drawGUI render font gui
@@ -62,14 +65,15 @@ main = do
   window <- SDL.createWindow "Roguelike" SDL.defaultWindow
   renderer <- SDL.createRenderer window (-1) defaultRenderer
 
-  unparsedHTML <- readFile "../assets/testFile.html"
+  unparsedHTML <- loadHTMLFile "../assets/testFile.html" [("$VAR1", "Death"), ("$VAR2", "10"), ("$VAR3", "LIFE")]
+
   let parsedHTML = fst $ head $ runParser parseHTML unparsedHTML
   htmlTexts <- genHTMLTextures renderer font parsedHTML
 
   SDL.Font.setHinting font SDL.Font.Mono
 
   let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts)) (Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500))
-                        10 white blue [] emptyGUI
+                 10 10 white blue [] emptyGUI
 
   loop renderer font startGUI
   SDL.destroyWindow window

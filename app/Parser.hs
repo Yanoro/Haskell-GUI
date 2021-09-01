@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings #-}
+
 module Parser where
 
 import Constants
@@ -6,6 +7,7 @@ import DataTypes
 
 import Control.Applicative
 import Data.Maybe
+import qualified Data.Text as T
 import Data.Char
 
 instance Functor Parser where
@@ -49,6 +51,7 @@ failParser pa pb = Parser (\s -> let res = runParser pa s in
                                      [] -> runParser pb s
                                      _  -> res)
 
+{- Takes a list of html variables, replaces them in the html, and parses it-}
 parseHTML :: Parser [HTML]
 parseHTML = filter (EmptySpace /=) <$> many parseTag
 
@@ -65,9 +68,7 @@ parseCharacters :: Parser String
 parseCharacters = many $ satisfy (\c -> isAlpha c || isDigit c)
 
 boolToMaybe :: (a -> Bool) -> (a -> Maybe a)
-boolToMaybe f = \s -> case f s of
-                        False -> Nothing
-                        True -> Just s
+boolToMaybe f s = if f s then Just s else Nothing
 
 attempt :: (a -> Maybe b) -> [a] -> Maybe b
 attempt _ [] = Nothing
@@ -101,6 +102,18 @@ parseParagraph = (\_ params _ text -> let (color, fontSize) = sortParameters par
 parseBreakParameters :: Parser String
 parseBreakParameters = (\_ _ params -> params) <$> skipSpaces <*> string "size=" <*> parseCharacters
 
+replaceWord :: String -> String -> String -> String
+replaceWord str oldWord newWord = unwords $ fst $ foldl (\(newStrWords, foundIt) currentStr ->
+                                                          if currentStr == oldWord && not foundIt
+                                                          then (newStrWords ++ [newWord], True)
+                                                          else (newStrWords ++ [currentStr], foundIt)) ([], False) $ words str
+
+{- The Packs are ugly i known sue me :) -}
+loadVariables :: [(String, String)] -> String -> String
+loadVariables [] html = html
+loadVariables ((varName, varValue):rest) html = let newHTML = T.replace (T.pack varName) (T.pack varValue) (T.pack html) in
+  loadVariables rest (T.unpack newHTML)
+
 parseBreak :: Parser HTML
 parseBreak = (\_ param _ -> let breakSize = fromMaybe defaultBreakSize $ maybeRead $ attempt (boolToMaybe $ all isDigit) [param] in
                  Break breakSize) <$> string "<br" <*> parseBreakParameters <*> parseUntil2 ">"
@@ -117,7 +130,7 @@ satisfy op = Parser (\s -> [(res, rest) | let (res, rest) = (head s, tail s), op
 parseWord :: Parser String
 parseWord = many $ satisfy isAlpha
 
--- Same as parseUntil but removes the stopStr from the rest e.g:
+-- Same as parseUntil but consumes the stopStr from the rest e.g:
 -- runParser (parseUntil2 "STOP") "test STOP bro" = [("test ", " bro")]
 parseUntil2 :: String -> Parser String
 parseUntil2 stopStr = Parser (\s -> [(res, drop (length stopStr) rest) | (res, rest) <- runParser (parseUntil stopStr) s])
@@ -126,6 +139,7 @@ parseUntil :: String -> Parser String
 parseUntil stopStr = Parser (\s -> let (res, rest) = go s "" in
                                       [(res, rest)]) where
   stopLen = length stopStr
+  go [] result = (result, "")
   go str result = if take stopLen str == stopStr
                   then (result, str)
                   else go (tail str) (result ++ [head str])
