@@ -106,32 +106,16 @@ drawWindowContents render _ drawRect (HTMLWindow (htmlDOC, texts)) = do
 
 drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
 drawWindow render font w = do
-  let outerRect = dimensions w
+  let drawRect = dimensions w
       bColor = borderColor w
-      tColor = titleBarFillColor w
-      (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) = outerRect
-      relTBarH = titleBarHeight w
-      absTBarH = relTBarH + y
-
-      -- We need those additions and subtractions so lines don't go over where they should go
-      (titleBarStart, titleBarEnd) = (SDL.P (SDL.V2 x absTBarH), SDL.P (SDL.V2 (x + dx - 1) absTBarH))
-      titleBarColorRect = SDL.Rectangle (SDL.P (SDL.V2 (x + 1) (y + 1))) (SDL.V2 (dx - 2) (relTBarH - 1))
-
-      comps = components w
+      (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) = drawRect
       wType = windowType w
-      drawRect = getDrawingRect w
-
       bSize = borderSize w
-      frameBorders = getRectBorders bSize outerRect
+      frameBorders = getRectBorders bSize drawRect
 
   SDL.rendererDrawColor render SDL.$= bColor
 
-  mapM_ (SDL.drawRect render . Just) frameBorders --Draw Main Frame
-
-  SDL.drawLine render titleBarStart titleBarEnd -- Draw Title Bar line
-
-  SDL.rendererDrawColor render SDL.$= tColor
-  SDL.fillRect render (Just titleBarColorRect) -- Fill tile bar with color
+  mapM_ (SDL.fillRect render . Just) frameBorders --Draw Main Frame
 
   drawWindowContents render font drawRect wType
 

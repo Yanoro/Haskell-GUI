@@ -33,3 +33,21 @@ defaultBreakSize = 50
    e.g Paragraphs, images etc -}
 borderDistance :: CInt
 borderDistance = 10
+
+{- Default parameters for a window -}
+
+defaultDimensions :: Rectangle CInt
+defaultDimensions = Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500)
+
+-- First element represents max width, the second max height
+defaultMaxDimensions, defaultMinDimensions :: (CInt, CInt)
+defaultMinDimensions = (300, 300)
+defaultMaxDimensions = (800, 800)
+
+defaultTBarHeight, defaultBSize :: CInt
+defaultTBarHeight = 10
+defaultBSize = 10
+
+defaultBColor, defaultTBarColor :: Color
+defaultBColor = white
+defaultTBarColor = blue

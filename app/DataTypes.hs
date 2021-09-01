@@ -8,8 +8,6 @@ import Data.Word (Word8)
 
 data WindowType = Default
 
-data Component = Button Color | Text T.Text Color [SDL.Texture]
-
 -- TODO: Change Paragraph to Text
 data HTML = EmptySpace | Paragraph String Color FontSize | Break CInt | Img FilePath | HButton | HTMLDOC [HTML] deriving (Show, Eq)
 
@@ -26,13 +24,12 @@ data Window = Window {
   windowID :: ID,
   windowType :: WType,
   dimensions :: SDL.Rectangle CInt,
-  titleBarHeight :: CInt,
+  minDimensions :: (CInt, CInt),
+  maxDimensions :: (CInt, CInt),
   borderSize :: CInt,
   beingDragged :: Bool,
   beingExpanded :: (Bool, ClickedBorder),
-  borderColor :: Color,
-  titleBarFillColor :: Color,
-  components :: [(Component, SDL.Rectangle CInt, Window -> Window)]
+  borderColor :: Color
 }
 
 data GUI = GUI {

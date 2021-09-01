@@ -13,7 +13,8 @@ import SDL.Video.Renderer
 import Control.Monad
 
 {- TODO:
-  Add component safety checks
+  After reaching max width or height, window starts to move
+  Add check to see that the given window is between min and max dimensions
   Add dynamic events to the windows
 -}
 
@@ -72,8 +73,7 @@ main = do
 
   SDL.Font.setHinting font SDL.Font.Mono
 
-  let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts)) (Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500))
-                 10 10 white blue [] emptyGUI
+  let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts)) Nothing Nothing Nothing Nothing Nothing Nothing Nothing emptyGUI
 
   loop renderer font startGUI
   SDL.destroyWindow window

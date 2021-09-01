@@ -21,9 +21,10 @@ description:         Please see the README on GitHub at <https://github.com/gith
 
 dependencies:
 - base >= 4.7 && < 5
-- sdl2 <= 2.5.30
+- sdl2 <= 2.5.3.0
 - sdl2-ttf <= 2.1.2
 - text >= 1.2.4.1
+
 library:
   source-dirs: src
 

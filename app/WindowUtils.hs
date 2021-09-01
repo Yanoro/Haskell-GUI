@@ -2,6 +2,7 @@ module WindowUtils where
 
 import DataTypes
 import Parser
+import Constants
 
 import qualified SDL
 import Foreign.C.Types
@@ -14,12 +15,9 @@ emptyGUI = GUI { windows = [], lastWindowID = 0 }
 maxDimension :: Int
 maxDimension = 32768
 
+-- TODO: Actually make this be useful :D
 windowSafetyCheck :: Window -> Window
-windowSafetyCheck w = let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = dimensions w
-                          tBarHeight = titleBarHeight w in
-                        if tBarHeight > dy
-                        then error "Window failed safety checks"
-                        else w
+windowSafetyCheck w = w
 
 unique :: (Eq a) => [a] -> Bool
 unique [] = True
@@ -33,13 +31,20 @@ guiSafetyCheck gui = let guiWindows = windows gui
                        then error "GUI Contains doubleID"
                        else gui
 
-createWindow :: ID -> WType -> SDL.Rectangle CInt -> CInt -> CInt -> Color ->
-                Color -> [(Component, SDL.Rectangle CInt, Window -> Window)] -> Window
-createWindow wID wType dmensions tBarHeight bSize bColor tBarColor comps =
-  let newWindow = windowSafetyCheck $ Window { windowID = wID, windowType = wType, dimensions = dmensions, borderSize = bSize,
-                                               beingDragged = False, beingExpanded = (False, NoBorder), borderColor = bColor,
-                                               titleBarFillColor = tBarColor, titleBarHeight = tBarHeight, components = comps} in
-    newWindow
+createWindow :: ID -> WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) -> Maybe CInt -> Maybe Color ->
+                Window
+createWindow wID wType maybeDimensions maybeMinDimensions maybeMaxDimensions maybeBSize maybeBColor =
+  let dmensions = fromMaybe defaultDimensions maybeDimensions
+      miDimensions = fromMaybe defaultMinDimensions maybeMinDimensions
+      maDimensions = fromMaybe defaultMaxDimensions maybeMaxDimensions
+      bSize = fromMaybe defaultBSize maybeBSize
+      bColor = fromMaybe defaultBColor maybeBColor
+
+      newWindow = windowSafetyCheck $ Window { windowID = wID, windowType = wType, dimensions = dmensions, minDimensions = miDimensions,
+                                               maxDimensions = maDimensions, borderSize = bSize, beingDragged = False,
+                                               beingExpanded = (False, NoBorder), borderColor = bColor} in
+
+        newWindow
 
 {- This function is meant to be called whenever we need to modify an Window
    eg. modifyWindow $ oldWindow { tBarHeight = 20 }                     -}
@@ -53,11 +58,12 @@ addWindowToGUI w gui = let newWindowsList = mappend [w] $ windows gui
                          guiSafetyCheck $ gui { windows = newWindowsList, lastWindowID = newID }
 
 {- Creates a window and immediatly places it into a GUI -}
-createGUIWindow :: WType -> SDL.Rectangle CInt -> CInt -> CInt -> Color -> Color ->
-                   [(Component, SDL.Rectangle CInt, Window -> Window)] -> GUI -> GUI
-createGUIWindow wType dmensions tBarHeight bSize bColor tBarColor comps oldGUI = let newWindow = createWindow (lastWindowID oldGUI) wType
-                                                                                           dmensions tBarHeight bSize bColor tBarColor comps in
-                                                                      addWindowToGUI newWindow oldGUI
+createGUIWindow :: WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) -> Maybe CInt -> Maybe CInt -> Maybe Color -> Maybe Color
+                   -> GUI -> GUI
+createGUIWindow wType dmensions minDimensions maxDimensions tBarHeight bSize bColor tBarColor oldGUI =
+  let newWindow = createWindow (lastWindowID oldGUI) wType dmensions
+                  minDimensions maxDimensions bSize bColor in
+    addWindowToGUI newWindow oldGUI
 
 splitSurface :: SDL.Surface -> CInt -> CInt -> IO [SDL.Surface]
 splitSurface srcSurf width height = mapM (\(x, dx) -> do
@@ -137,24 +143,8 @@ gotSomething :: Maybe a -> Bool
 gotSomething (Just _) = True
 gotSomething Nothing = False
 
--- Get the drawable surface of a window
-getDrawingRect :: Window -> SDL.Rectangle CInt
-getDrawingRect w = let (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = dimensions w
-                       tBarH = titleBarHeight w in
-                     SDL.Rectangle (SDL.P (SDL.V2 x (y + tBarH))) (SDL.V2 dx (dy - tBarH))
-
 replaceAtIndex :: Int -> a -> [a] -> [a]
 replaceAtIndex index newItem lst = a ++ (newItem:b) where (a, _:b) = splitAt index lst
-
-{- Add a component to a GUI. Input rectangle must be relative -}
-windowAddComponent :: Window -> SDL.Rectangle CInt -> Component -> (Window -> Window) -> Window
-windowAddComponent w rect comp answerFunction =
-  let (SDL.Rectangle (SDL.P (SDL.V2 x y)) _ ) = getDrawingRect w
-      (SDL.Rectangle (SDL.P (SDL.V2 x' y')) (SDL.V2 dx' dy')) = rect
-
-      newComponents = mappend (components w)
-                              [(comp, SDL.Rectangle (SDL.P (SDL.V2 (x' + x) (y' + y))) (SDL.V2 dx' dy'), answerFunction)] in
-    (w {components = newComponents})
 
 {- The windowID of the newWindow has to be the same as the old one.
    This way we don't need to keep passing a targetID to the function just to "update" the gui -}
@@ -179,13 +169,23 @@ updateExpandedWindow :: SDL.V2 CInt -> Window -> GUI -> GUI
 updateExpandedWindow (SDL.V2 mx my) expandedWindow oldGUI =
   let (_, clickBorder) = beingExpanded expandedWindow
       oldDimensions = dimensions expandedWindow
+      (maxWidth, maxHeight) = maxDimensions expandedWindow
+      (minWidth, minHeight) = minDimensions expandedWindow
       (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = oldDimensions
-      newDimensions = case clickBorder of
+      dimensions' = case clickBorder of
                         RightBorder  -> SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 (dx + mx) (dy + my))
                         BottomBorder -> SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 (dx + mx) (dy + my)) 
                         LeftBorder   -> SDL.Rectangle (SDL.P (SDL.V2 (x + mx) (y + my))) (SDL.V2 (dx - mx) (dy - my))
                         TopBorder    -> SDL.Rectangle (SDL.P (SDL.V2 (x + mx) (y + my))) (SDL.V2 (dx - mx) (dy - my))
-                        NoBorder     -> oldDimensions in
+                        NoBorder     -> oldDimensions
+      (SDL.Rectangle start (SDL.V2 width height)) = dimensions'
+      width' | width > maxWidth = maxWidth
+             | width < minWidth = minWidth
+             | otherwise = width
+      height' | height > maxHeight = maxHeight
+              | height < minHeight = minHeight
+              | otherwise = height
+      newDimensions = SDL.Rectangle start (SDL.V2 width' height') in
     updateGUI (modifyWindow $ expandedWindow {dimensions = newDimensions}) oldGUI
 
 guiHandleClick :: SDL.InputMotion -> SDL.MouseButton -> SDL.Point SDL.V2 CInt -> GUI -> GUI
