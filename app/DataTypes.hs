@@ -11,7 +11,7 @@ data WindowType = Default
 -- TODO: Change Paragraph to Text
 data HTML = EmptySpace | Paragraph String Color FontSize | Break CInt | Img FilePath | HButton | HTMLDOC [HTML] deriving (Show, Eq)
 
-data ClickedBorder = LeftBorder | TopBorder | RightBorder | BottomBorder | NoBorder deriving Show
+data ClickedBorder = LeftBorder | TopBorder | RightBorder | BottomBorder | NoBorder deriving (Show, Eq)
 
 {- The reason that we need a [[SDL.Texture]] is that we need to create multiple
    textures for a single paragraph so we can format it correctly, and since we
@@ -19,7 +19,6 @@ data ClickedBorder = LeftBorder | TopBorder | RightBorder | BottomBorder | NoBor
 
 newtype WType = HTMLWindow ([HTML], [[SDL.Texture]])
 
--- TODO: Remove components later
 data Window = Window {
   windowID :: ID,
   windowType :: WType,

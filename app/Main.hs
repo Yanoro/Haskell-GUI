@@ -14,7 +14,8 @@ import Control.Monad
 
 {- TODO:
   After reaching max width or height, window starts to move
-  Add check to see that the given window is between min and max dimensions
+  Multiple changes to variables inside of html file
+  Add scrolling
   Add dynamic events to the windows
 -}
 
@@ -46,10 +47,9 @@ loop render font gui = do
     print $ any handleMouse events
   else return ()
   -}
-  mapM_ handleMouse events
+
+ -- mapM_ handleMouse events
   SDL.rendererDrawColor render SDL.$= SDL.V4 0 0 0 0
-
-
 
   SDL.clear render
   drawGUI render font gui

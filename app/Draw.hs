@@ -10,7 +10,6 @@ import SDL.Font
 import Control.Monad
 import Foreign.C.Types
 
-
 import qualified Data.Text as T
 
 genRenderTree :: SDL.Rectangle CInt -> [HTML] -> [SDL.Rectangle CInt]
@@ -36,6 +35,7 @@ genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Break breakSi
       renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
                                         (SDL.V2 (dx - 2 * borderDistance) breakSize) in
     (drawRect, renderNode)
+
 
 --TODO: Add safety checks to drawings outside the draw rectangle
 {- Gets adequate source and destination rectangles to properly display text -}
@@ -74,14 +74,16 @@ destRects fSize msgLen (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) =
                             where fontSize = fromIntegral fSize
 
 -- Draws a HTML Tag, "consuming" a texture if needed
-drawHTML :: SDL.Renderer -> SDL.Rectangle CInt -> [[SDL.Texture]] -> HTML -> IO [[SDL.Texture]]
-drawHTML render drawRect (textures:rest) (Paragraph p color fontSize) = do
-  SDL.rendererDrawColor render SDL.$= color
+drawHTML :: SDL.Renderer -> Window -> SDL.Rectangle CInt -> [[SDL.Texture]] -> HTML -> IO [[SDL.Texture]]
+drawHTML render w drawRect (textures:rest) (Paragraph p color fontSize) = do
+
   infoTexts <- mapM (\text -> do
                         textInfo <- SDL.queryTexture text
                         return (text, textInfo)) textures
-  let sdRects = srcDestRects fontSize (T.length $ T.pack p) infoTexts drawRect
+  let drawFrame = dimensions w
+      sdRects = filter (rectInsideRect drawFrame . snd) $ srcDestRects fontSize (T.length $ T.pack p) infoTexts drawRect
       dRects = map snd sdRects
+  SDL.rendererDrawColor render SDL.$= Constants.red
 
   mapM_ (\((text, s), d) -> do
             SDL.copy render text (Just s) (Just d)) sdRects
@@ -92,17 +94,16 @@ drawHTML render drawRect (textures:rest) (Paragraph p color fontSize) = do
 
   return rest
 
-drawHTML _ _ textures _ = return textures
+drawHTML _ _ _ textures _ = return textures
 
 --drawHTML render drawRect (textures) (Break) = return textures
 
-drawWindowContents :: SDL.Renderer -> SDL.Font.Font -> SDL.Rectangle CInt -> WType -> IO ()
-drawWindowContents render _ drawRect (HTMLWindow (htmlDOC, texts)) = do
+drawWindowContents :: SDL.Renderer -> Window -> SDL.Font.Font -> SDL.Rectangle CInt -> WType -> IO ()
+drawWindowContents render w _ drawRect (HTMLWindow (htmlDOC, texts)) = do
   let renderTree = genRenderTree drawRect htmlDOC
+  print renderTree
   foldM_ (\textures (html, rect) -> do
-                 drawHTML render rect textures html) texts (zip htmlDOC renderTree)
-  mapM_ (\rect -> do
-            SDL.drawRect render (Just rect)) renderTree
+                 drawHTML render w rect textures html) texts (zip htmlDOC renderTree)
 
 drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
 drawWindow render font w = do
@@ -117,8 +118,7 @@ drawWindow render font w = do
 
   mapM_ (SDL.fillRect render . Just) frameBorders --Draw Main Frame
 
-  drawWindowContents render font drawRect wType
-
+  drawWindowContents render w font drawRect wType
 
 -- Generates for each html tag their required textures, in this case only paragraph needs it.
 -- It's important that at the stage where the html gets drawn, the list of html tags given is the

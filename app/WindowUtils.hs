@@ -37,14 +37,17 @@ createWindow wID wType maybeDimensions maybeMinDimensions maybeMaxDimensions may
   let dmensions = fromMaybe defaultDimensions maybeDimensions
       miDimensions = fromMaybe defaultMinDimensions maybeMinDimensions
       maDimensions = fromMaybe defaultMaxDimensions maybeMaxDimensions
+      (minWidth, minHeight) = miDimensions
+      (maxWidth, maxHeight) = maDimensions
+      (SDL.Rectangle _ (SDL.V2 width height)) = dmensions
       bSize = fromMaybe defaultBSize maybeBSize
       bColor = fromMaybe defaultBColor maybeBColor
-
       newWindow = windowSafetyCheck $ Window { windowID = wID, windowType = wType, dimensions = dmensions, minDimensions = miDimensions,
                                                maxDimensions = maDimensions, borderSize = bSize, beingDragged = False,
                                                beingExpanded = (False, NoBorder), borderColor = bColor} in
-
-        newWindow
+    if width < minWidth || width > maxWidth || height < minHeight || height > maxHeight
+    then error "[!] Invalid dimensions for window"
+    else newWindow
 
 {- This function is meant to be called whenever we need to modify an Window
    eg. modifyWindow $ oldWindow { tBarHeight = 20 }                     -}
@@ -83,27 +86,33 @@ getFirst fun (x:xs) = if fun x
                       then Just x
                       else getFirst fun xs
 
+-- Tells wether the second rectangle is inside the first
+-- !! Assumes that the first point of the Rectangle is the left upper corner for both of them !!
+rectInsideRect :: SDL.Rectangle CInt -> SDL.Rectangle CInt -> Bool
+rectInsideRect rect (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
+    pointInsideRectangle rect (SDL.P (SDL.V2 x y)) && pointInsideRectangle rect (SDL.P (SDL.V2 (x + dx) (y + dy)))
+
 -- !! This assumes that the first point is the upper left corner !!
-insideRectangle :: SDL.Rectangle CInt -> SDL.Point SDL.V2 CInt -> Bool
-insideRectangle (SDL.Rectangle (SDL.P (SDL.V2 xStart yStart)) (SDL.V2 width height)) (SDL.P (SDL.V2 x y)) =
+pointInsideRectangle :: SDL.Rectangle CInt -> SDL.Point SDL.V2 CInt -> Bool
+pointInsideRectangle (SDL.Rectangle (SDL.P (SDL.V2 xStart yStart)) (SDL.V2 width height)) (SDL.P (SDL.V2 x y)) =
   not $ x < xStart || y < yStart || x > xStart + width || y > yStart + height
 
 clickInsideGUI :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
-clickInsideGUI click = getFirst (\x -> dimensions x `insideRectangle` click)
+clickInsideGUI click = getFirst (\x -> dimensions x `pointInsideRectangle` click)
 
 clickInsideBorder :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
 clickInsideBorder _ [] = Nothing
 clickInsideBorder click (window:rest) = let borders = getRectBorders (borderSize window) (dimensions window) in
-                                          if any (`insideRectangle` click) borders
+                                          if any (`pointInsideRectangle` click) borders
                                           then Just window
                                           else clickInsideBorder click rest
 
 getRectBorders :: CInt -> SDL.Rectangle CInt -> [SDL.Rectangle CInt]
 getRectBorders bSize (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
-  let topBorder    = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) (y - bSize))) (SDL.V2 (dx + 2 * bSize) bSize)
-      bottomBorder = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) (y + dy))) (SDL.V2 (dx + 2 * bSize) bSize)
-      leftBorder   = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) y)) (SDL.V2 bSize dy)
-      rightBorder  = SDL.Rectangle (SDL.P (SDL.V2 (x + dx) y)) (SDL.V2 bSize dy) in
+  let leftBorder   = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) y)) (SDL.V2 bSize dy)
+      topBorder    = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) (y - bSize))) (SDL.V2 (dx + 2 * bSize) bSize)
+      rightBorder  = SDL.Rectangle (SDL.P (SDL.V2 (x + dx) y)) (SDL.V2 bSize dy)
+      bottomBorder = SDL.Rectangle (SDL.P (SDL.V2 (x - bSize) (y + dy))) (SDL.V2 (dx + 2 * bSize) bSize) in
     [leftBorder, topBorder, rightBorder, bottomBorder]
 
 setDragging :: Window -> GUI -> GUI
@@ -115,7 +124,7 @@ unsetDragging oldWindow = updateGUI (modifyWindow $ oldWindow {beingDragged = Fa
 setExpansion :: SDL.Point SDL.V2 CInt -> Window -> GUI -> GUI
 setExpansion click oldWindow =
   let borders = getRectBorders (borderSize oldWindow) (dimensions oldWindow)
-      (SDL.Rectangle (SDL.P (SDL.V2 x' y')) _) = fromJust $ getFirst (`insideRectangle` click) borders
+      (SDL.Rectangle (SDL.P (SDL.V2 x' y')) _) = fromJust $ getFirst (`pointInsideRectangle` click) borders
       rectCornerTable = zip (map (\(SDL.Rectangle (SDL.P (SDL.V2 m n)) _) -> (m, n)) borders) [LeftBorder, TopBorder, RightBorder, BottomBorder]
 
       clickedBorder = fromMaybe NoBorder $ lookup clickedBorderCoords rectCornerTable
@@ -172,20 +181,20 @@ updateExpandedWindow (SDL.V2 mx my) expandedWindow oldGUI =
       (maxWidth, maxHeight) = maxDimensions expandedWindow
       (minWidth, minHeight) = minDimensions expandedWindow
       (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = oldDimensions
-      dimensions' = case clickBorder of
-                        RightBorder  -> SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 (dx + mx) (dy + my))
-                        BottomBorder -> SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 (dx + mx) (dy + my)) 
-                        LeftBorder   -> SDL.Rectangle (SDL.P (SDL.V2 (x + mx) (y + my))) (SDL.V2 (dx - mx) (dy - my))
-                        TopBorder    -> SDL.Rectangle (SDL.P (SDL.V2 (x + mx) (y + my))) (SDL.V2 (dx - mx) (dy - my))
-                        NoBorder     -> oldDimensions
-      (SDL.Rectangle start (SDL.V2 width height)) = dimensions'
-      width' | width > maxWidth = maxWidth
-             | width < minWidth = minWidth
-             | otherwise = width
-      height' | height > maxHeight = maxHeight
-              | height < minHeight = minHeight
-              | otherwise = height
-      newDimensions = SDL.Rectangle start (SDL.V2 width' height') in
+      (width, height) = if clickBorder == RightBorder || clickBorder == BottomBorder
+                       then (dx + mx, dy + my)
+                       else (dx - mx, dy - my)
+
+      (startX, width') | width > maxWidth = (x, maxWidth)
+                       | width < minWidth = (x, minWidth)
+                       | otherwise = (x + mx, width)
+      (startY, height') | height > maxHeight = (y, maxHeight)
+                        | height < minHeight = (y, minHeight)
+                        | otherwise = (y + my, height)
+                        -- The left upper corner moves when the left border or top border are expanded
+      newDimensions = if clickBorder == LeftBorder || clickBorder == TopBorder
+                      then SDL.Rectangle (SDL.P (SDL.V2 startX startY)) (SDL.V2 width' height')
+                      else SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 width' height') in
     updateGUI (modifyWindow $ expandedWindow {dimensions = newDimensions}) oldGUI
 
 guiHandleClick :: SDL.InputMotion -> SDL.MouseButton -> SDL.Point SDL.V2 CInt -> GUI -> GUI
