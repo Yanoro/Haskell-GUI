@@ -17,7 +17,7 @@ data ClickedBorder = LeftBorder | TopBorder | RightBorder | BottomBorder | NoBor
    textures for a single paragraph so we can format it correctly, and since we
    need multiple paragraphs, we need [[SDL.Texture]] -}
 
-newtype WType = HTMLWindow ([HTML], [[SDL.Texture]])
+newtype WType = HTMLWindow ([HTML], [[SDL.Texture]], (String, FilePath, [HTMLVar]))
 
 data Window = Window {
   windowID :: ID,
@@ -25,6 +25,7 @@ data Window = Window {
   dimensions :: SDL.Rectangle CInt,
   minDimensions :: (CInt, CInt),
   maxDimensions :: (CInt, CInt),
+  scrollingOffset :: CInt,
   borderSize :: CInt,
   beingDragged :: Bool,
   beingExpanded :: (Bool, ClickedBorder),

@@ -5,6 +5,8 @@ import Parser
 import Constants
 
 import qualified SDL
+import qualified SDL.Font
+import qualified Data.Text as T
 import Foreign.C.Types
 import SDL.Video.Renderer
 import Data.Maybe
@@ -18,6 +20,30 @@ maxDimension = 32768
 -- TODO: Actually make this be useful :D
 windowSafetyCheck :: Window -> Window
 windowSafetyCheck w = w
+
+genRenderTree :: SDL.Rectangle CInt -> [HTML] -> [SDL.Rectangle CInt]
+genRenderTree drawRect htmlDOC = snd $ foldl (\(oldDrawRect, prevRenderNodes) html ->
+                                                let (newDrawRect, newRenderNode) = genRenderNode oldDrawRect html in
+                                                  (newDrawRect, mappend prevRenderNodes [newRenderNode])) (drawRect, []) htmlDOC
+
+genRenderNode :: SDL.Rectangle CInt -> HTML -> (SDL.Rectangle CInt, SDL.Rectangle CInt)
+genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Paragraph p _ fontSize) =
+    let lineHSize = div dx (fromIntegral fontSize)
+        amountOfLines = div (length p) (fromIntegral lineHSize)
+        lines = fromIntegral $ amountOfLines * fromIntegral fontSize
+        paragraphSize = if lines < 1 then fontSize else lines
+        paragraphDistance = 20
+        drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + paragraphSize + paragraphDistance)))
+                    (SDL.V2 dx (dy - paragraphSize - borderDistance))
+        renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
+                    (SDL.V2 (dx - 2 * borderDistance) paragraphSize) in
+      (drawRect, renderNode)
+genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Break breakSize) =
+  let drawRect = SDL.Rectangle (SDL.P (SDL.V2 x (y + borderDistance + breakSize)))
+                                (SDL.V2 dx (dy - breakSize))
+      renderNode = SDL.Rectangle (SDL.P (SDL.V2 (x + borderDistance) (y + borderDistance)))
+                                        (SDL.V2 (dx - 2 * borderDistance) breakSize) in
+    (drawRect, renderNode)
 
 unique :: (Eq a) => [a] -> Bool
 unique [] = True
@@ -43,7 +69,7 @@ createWindow wID wType maybeDimensions maybeMinDimensions maybeMaxDimensions may
       bSize = fromMaybe defaultBSize maybeBSize
       bColor = fromMaybe defaultBColor maybeBColor
       newWindow = windowSafetyCheck $ Window { windowID = wID, windowType = wType, dimensions = dmensions, minDimensions = miDimensions,
-                                               maxDimensions = maDimensions, borderSize = bSize, beingDragged = False,
+                                               maxDimensions = maDimensions, borderSize = bSize, beingDragged = False, scrollingOffset = 0,
                                                beingExpanded = (False, NoBorder), borderColor = bColor} in
     if width < minWidth || width > maxWidth || height < minHeight || height > maxHeight
     then error "[!] Invalid dimensions for window"
@@ -97,6 +123,7 @@ pointInsideRectangle :: SDL.Rectangle CInt -> SDL.Point SDL.V2 CInt -> Bool
 pointInsideRectangle (SDL.Rectangle (SDL.P (SDL.V2 xStart yStart)) (SDL.V2 width height)) (SDL.P (SDL.V2 x y)) =
   not $ x < xStart || y < yStart || x > xStart + width || y > yStart + height
 
+--TODO: Change name to point inside GUI
 clickInsideGUI :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
 clickInsideGUI click = getFirst (\x -> dimensions x `pointInsideRectangle` click)
 
@@ -224,13 +251,77 @@ guiHandleMotion motion oldGUI | windowBeingDragged guiWindows = updateDraggedWin
                               | otherwise = oldGUI
                         where guiWindows = windows oldGUI
 
+getMaxOffset :: Window -> CInt
+getMaxOffset w = let (HTMLWindow (html, _, _)) = windowType w
+                     renderTree = genRenderTree (dimensions w) html
+                     (SDL.Rectangle (SDL.P (SDL.V2 _ y)) _) = dimensions w
+                     (SDL.Rectangle (SDL.P (SDL.V2 _ y')) _) = last renderTree
+                     maxOffset = y' - y - relativeMaxOffset in
+                   maxOffset
 
-guiHandleEvent :: SDL.EventPayload -> GUI -> GUI
+
+guiHandleScrolling :: SDL.V2 CInt -> GUI -> IO GUI
+guiHandleScrolling (SDL.V2 _ dy) oldGUI = do
+  let oldWindows = windows oldGUI
+      dy' = -dy -- The default scrolling direction is a little weird so we need to flip it
+
+  mouseCoords <- SDL.getAbsoluteMouseLocation
+  case clickInsideGUI mouseCoords oldWindows of
+    Nothing -> return oldGUI
+    Just w -> let maxOffset = getMaxOffset w
+                  prevOffset = scrollingOffset w
+                  newScrollingOffset = prevOffset + dy' * scrollingScale in
+                do
+                print newScrollingOffset
+                print maxOffset
+                if newScrollingOffset < minOffset || newScrollingOffset > maxOffset
+                then return oldGUI
+                else return $ updateGUI (modifyWindow $ w {scrollingOffset = prevOffset + dy' * scrollingScale}) oldGUI
+
+guiHandleEvent :: SDL.EventPayload -> GUI -> IO GUI
 guiHandleEvent (SDL.MouseButtonEvent (SDL.MouseButtonEventData _ motion _ button _ clickCoords)) oldGUI =
-                                                                guiHandleClick motion button (fromIntegral <$> clickCoords) oldGUI
+                                                return $ guiHandleClick motion button (fromIntegral <$> clickCoords) oldGUI
 guiHandleEvent (SDL.MouseMotionEvent (SDL.MouseMotionEventData _ _ _ _ motion)) oldGUI =
-                                                                guiHandleMotion (fromIntegral <$> motion) oldGUI
-guiHandleEvent _ oldGUI = oldGUI
+                                                return $ guiHandleMotion (fromIntegral <$> motion) oldGUI
+guiHandleEvent (SDL.MouseWheelEvent (SDL.MouseWheelEventData _ _ scrolling _)) oldGUI =
+                                                                guiHandleScrolling (fromIntegral <$> scrolling) oldGUI
+guiHandleEvent _ oldGUI = return oldGUI
+
+lookupReplace :: Eq a => [(a, b)] -> a -> b -> [(a, b)]
+lookupReplace [] _ _ = []
+lookupReplace ((currentKey, currentItem):rest) key replacement = if key == currentKey
+                                                                 then (key, replacement) : rest
+                                                                 else (key, currentItem) : lookupReplace rest key replacement
+
+-- Generates for each html tag their required textures, in this case only paragraph needs it.
+-- It's important that at the stage where the html gets drawn, the list of html tags given is the
+-- same as the one given given in this function, otherwise html tags are going to be drawn with other
+-- tag's textures
+genHTMLTextures :: SDL.Renderer -> SDL.Font.Font -> [HTML] -> IO [[SDL.Texture]]
+genHTMLTextures render font htmlDOC = do
+  texts <- mapM go htmlDOC
+  return $ filter ([] /=) texts where
+  go (Paragraph p color _) = do
+    let p' = T.pack p
+    surf <- SDL.Font.blended font color p'
+    (SDL.V2 width height) <- SDL.surfaceDimensions surf
+    surfaces <- if width > fromIntegral maxDimension then splitSurface surf (fromIntegral width) height else return [surf]
+    texts <- mapM (SDL.createTextureFromSurface render) surfaces
+    SDL.freeSurface surf
+    return texts
+  go (Break _) = return []
+  go _ = return []
+
+reloadHTMLVar :: SDL.Renderer -> SDL.Font.Font -> Window -> HTMLVar -> GUI -> IO GUI
+reloadHTMLVar render font w (varName, varValue) oldGUI =
+  do
+  let (HTMLWindow (_, _, (_, fileName, varTable))) = windowType w
+      newVarTable = lookupReplace varTable varName varValue
+  rawText <- readFile fileName
+  let htmlText' = loadVariables newVarTable rawText
+      newParsedHTML = fst $ head $ runParser parseHTML htmlText'
+  newTextures <- genHTMLTextures render font newParsedHTML
+  return $ updateGUI (modifyWindow $ w { windowType = HTMLWindow (newParsedHTML, newTextures, (htmlText', fileName, newVarTable))}) oldGUI
 
 {- Convenience function so we don't forget to load our variables
    Remember that the order that the variables are given DO matter! -}
