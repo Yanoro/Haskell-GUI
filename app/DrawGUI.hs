@@ -64,7 +64,7 @@ drawHTML render w drawRect (textures:rest) (Paragraph p color fontSize) = do
             SDL.copy render text (Just s) (Just d)) sdRects
 
   mapM_ (\d -> do
-            SDL.rendererDrawColor render SDL.$= Constants.red
+            SDL.rendererDrawColor render SDL.$= GUIConstants.red
             SDL.drawRect render (Just d)) dRects
 
   return rest

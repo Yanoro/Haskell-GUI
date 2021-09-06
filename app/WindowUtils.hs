@@ -1,8 +1,8 @@
 module WindowUtils where
 
-import DataTypes
-import Parser
-import Constants
+import GUIDataTypes
+import GUIParser
+import GUIConstants
 
 import qualified SDL
 import qualified SDL.Font

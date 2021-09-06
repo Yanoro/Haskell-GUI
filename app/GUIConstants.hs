@@ -1,6 +1,6 @@
 module GUIConstants where
 
-import DataTypes
+import GUIDataTypes
 
 import SDL
 import Foreign.C.Types

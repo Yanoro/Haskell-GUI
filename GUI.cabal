@@ -40,10 +40,10 @@ library
 executable GUI-exe
   main-is: Main.hs
   other-modules:
-      Constants
-      DataTypes
-      Draw
-      Parser
+      DrawGUI
+      GUIConstants
+      GUIDataTypes
+      GUIParser
       WindowUtils
       Paths_GUI
   hs-source-dirs:
