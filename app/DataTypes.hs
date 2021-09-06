@@ -1,4 +1,4 @@
-module DataTypes where
+module GUIDataTypes where
 
 import qualified SDL
 import qualified Data.Text as T

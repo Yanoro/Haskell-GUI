@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-import Draw
-import DataTypes
-import Parser
+import GUIDraw
+import GUIDataTypes
+import GUIParser
 import WindowUtils
 
 

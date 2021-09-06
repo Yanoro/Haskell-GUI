@@ -1,4 +1,4 @@
-module Constants where
+module GUIConstants where
 
 import DataTypes
 

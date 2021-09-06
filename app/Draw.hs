@@ -1,8 +1,8 @@
-module Draw where
+module DrawGUI where
 
-import Constants
-import DataTypes
-import Parser
+import GUIConstants
+import GUIDataTypes
+import GUIParser
 import WindowUtils
 
 import qualified SDL

@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Parser where
+module GUIParser where
 
-import Constants
-import DataTypes
+import GUIConstants
+import GUIDataTypes
 
 import Control.Applicative
 import Data.Maybe
