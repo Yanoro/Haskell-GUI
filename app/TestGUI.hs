@@ -15,10 +15,7 @@ import SDL.Video.Renderer
 import Control.Monad
 
 {- TODO
-  Remove transparency in the background
-  Multiple changes to variables inside of html file
-  Add a new way to find the windows that you need, maybe have windows have names?
-  Add scrolling
+  Handle what happens with multiple windows with the same name
   Add dynamic events to the windows
 -}
 

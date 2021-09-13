@@ -52,9 +52,9 @@ unique :: (Eq a) => [a] -> Bool
 unique [] = True
 unique (x:xs) = notElem x xs && unique xs
 
+-- TODO: Make this do something
 guiSafetyCheck :: GUI -> GUI
-guiSafetyCheck gui = do map windowSafetyCheck gui
-                        gui
+guiSafetyCheck gui = gui
 
 createWindow :: WindowName -> WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) ->
                 Maybe CInt -> Maybe Color -> Maybe Color -> Window
@@ -188,7 +188,7 @@ replaceAtIndex index newItem lst = a ++ (newItem:b) where (a, _:b) = splitAt ind
 {- The windowName of the newWindow has to be the same as the old one.
   The safety window check should ensure that -}
 updateGUI :: Window -> GUI -> GUI
-updateGUI newWindow gui = go gui where
+updateGUI newWindow = go where
   go [] = []
   go (window:rest) = if windowName window == windowName newWindow
                      then newWindow : rest
@@ -318,6 +318,17 @@ genHTMLTextures render font htmlDOC = do
 loadVarTable :: [HTMLVar] -> String -> String
 loadVarTable htmlVars html = foldl (flip loadVariable) html htmlVars
 
+{- Meant to be called when you want to change the html that your window is based on -}
+-- TODO: This will probably have some errors since the variables might disappear in the new rawText
+reloadRawHTML :: SDL.Renderer -> SDL.Font.Font -> String -> Window -> GUI -> IO GUI
+reloadRawHTML render font rawText w oldGUI =
+  do let (HTMLWindow (_, _, (_, varTable))) = windowType w
+         htmlText = loadVarTable varTable rawText
+         newParsedHTML = fst $ head $ runParser parseHTML htmlText
+     newTextures <- genHTMLTextures render font newParsedHTML
+     return $ updateGUI
+       (modifyWindow $ w { windowType = HTMLWindow (newParsedHTML, newTextures, (rawText, varTable))}) oldGUI
+
 reloadHTMLVar :: SDL.Renderer -> SDL.Font.Font -> Window -> HTMLVar -> GUI -> IO GUI
 reloadHTMLVar render font w (varName, varValue) oldGUI =
   do
@@ -325,15 +336,12 @@ reloadHTMLVar render font w (varName, varValue) oldGUI =
       newVarTable = fromMaybe (varTable ++ [(varName, varValue)]) $ lookupReplace varTable varName varValue
       htmlText' = loadVarTable newVarTable rawText
       newParsedHTML = fst $ head $ runParser parseHTML htmlText'
-
   newTextures <- genHTMLTextures render font newParsedHTML
   return $ updateGUI
     (modifyWindow $ w { windowType = HTMLWindow (newParsedHTML, newTextures, (rawText, newVarTable))}) oldGUI
 
-
 {- Convenience function so we don't forget to load our variables
    Remember that the order that the variables are given DO matter! -}
-
 loadHTMLFile :: FilePath -> [HTMLVar] -> IO String
 loadHTMLFile fileName vars = do
   htmlText <- readFile fileName
