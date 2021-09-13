@@ -115,8 +115,8 @@ loadVariables [] html = html
 loadVariables ((varName, varValue):rest) html = let newHTML = T.replace (T.pack varName) (T.pack varValue) (T.pack html) in
   loadVariables rest (T.unpack newHTML)
 -}
-loadVariables :: HTMLVar -> String -> String
-loadVariables (varName, varValue) html = T.unpack $ T.replace (T.pack varName) (T.pack varValue) (T.pack html)
+loadVariable :: HTMLVar -> String -> String
+loadVariable (varName, varValue) html = T.unpack $ T.replace (T.pack varName) (T.pack varValue) (T.pack html)
 
 parseBreak :: Parser HTML
 parseBreak = (\_ param _ -> let breakSize = fromMaybe defaultBreakSize $ maybeRead $ attempt (boolToMaybe $ all isDigit) [param] in

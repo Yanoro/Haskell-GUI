@@ -89,6 +89,7 @@ drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
 drawWindow render font w = do
   let drawRect = dimensions w
       bColor = borderColor w
+      backColor = backgroundColor w
       (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) = drawRect
       wType = windowType w
       bSize = borderSize w
@@ -98,7 +99,11 @@ drawWindow render font w = do
 
   mapM_ (SDL.fillRect render . Just) frameBorders --Draw Main Frame
 
+  SDL.rendererDrawColor render SDL.$= backColor
+
+  SDL.fillRect render (Just drawRect)
+
   drawWindowContents render w font drawRect wType
 
 drawGUI :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
-drawGUI render font gui = mapM_ (drawWindow render font) (windows gui)
+drawGUI render font = mapM_ (drawWindow render font)

@@ -12,7 +12,7 @@ import SDL.Video.Renderer
 import Data.Maybe
 
 emptyGUI :: GUI
-emptyGUI = GUI { windows = [], lastWindowID = 0 }
+emptyGUI = []
 
 maxDimension :: Int
 maxDimension = 32768
@@ -45,24 +45,20 @@ genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Break breakSi
                                         (SDL.V2 (dx - 2 * borderDistance) breakSize) in
     (drawRect, renderNode)
 
-findWindowByID :: ID -> GUI -> Maybe Window
-findWindowByID targetID gui = getFirst (\w -> windowID w == targetID) $ windows gui
+findWindowByName :: WindowName -> GUI -> Maybe Window
+findWindowByName targetName gui = getFirst (\w -> windowName w == targetName) gui
 
 unique :: (Eq a) => [a] -> Bool
 unique [] = True
 unique (x:xs) = notElem x xs && unique xs
 
 guiSafetyCheck :: GUI -> GUI
-guiSafetyCheck gui = let guiWindows = windows gui
-                         newGUIWindows = map windowSafetyCheck guiWindows
-                         doubleID = not $ unique $ map windowID guiWindows in
-                       if doubleID
-                       then error "GUI Contains doubleID"
-                       else gui
+guiSafetyCheck gui = do map windowSafetyCheck gui
+                        gui
 
-createWindow :: ID -> WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) -> Maybe CInt -> Maybe Color ->
-                Window
-createWindow wID wType maybeDimensions maybeMinDimensions maybeMaxDimensions maybeBSize maybeBColor =
+createWindow :: WindowName -> WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) ->
+                Maybe CInt -> Maybe Color -> Maybe Color -> Window
+createWindow wName wType maybeDimensions maybeMinDimensions maybeMaxDimensions maybeBSize maybeBorderColor maybeBackgroundColor =
   let dmensions = fromMaybe defaultDimensions maybeDimensions
       miDimensions = fromMaybe defaultMinDimensions maybeMinDimensions
       maDimensions = fromMaybe defaultMaxDimensions maybeMaxDimensions
@@ -70,10 +66,11 @@ createWindow wID wType maybeDimensions maybeMinDimensions maybeMaxDimensions may
       (maxWidth, maxHeight) = maDimensions
       (SDL.Rectangle _ (SDL.V2 width height)) = dmensions
       bSize = fromMaybe defaultBSize maybeBSize
-      bColor = fromMaybe defaultBColor maybeBColor
-      newWindow = windowSafetyCheck $ Window { windowID = wID, windowType = wType, dimensions = dmensions, minDimensions = miDimensions,
+      bColor = fromMaybe defaultBColor maybeBorderColor
+      backColor = fromMaybe defaultBackgroundColor maybeBackgroundColor
+      newWindow = windowSafetyCheck $ Window { windowName = wName, windowType = wType, dimensions = dmensions, minDimensions = miDimensions,
                                                maxDimensions = maDimensions, borderSize = bSize, beingDragged = False, scrollingOffset = 0,
-                                               beingExpanded = (False, NoBorder), borderColor = bColor} in
+                                               beingExpanded = (False, NoBorder), borderColor = bColor, backgroundColor = backColor} in
     if width < minWidth || width > maxWidth || height < minHeight || height > maxHeight
     then error "[!] Invalid dimensions for window"
     else newWindow
@@ -83,18 +80,21 @@ createWindow wID wType maybeDimensions maybeMinDimensions maybeMaxDimensions may
 modifyWindow :: Window -> Window
 modifyWindow = windowSafetyCheck
 
-{- Takes a window and returns a GUI containing that window and an updated ID record -}
+addWindowsToGUI :: [Window] -> GUI -> GUI
+addWindowsToGUI [] res = res
+addWindowsToGUI (w:rest) currentGUI = addWindowsToGUI rest $ addWindowToGUI w currentGUI
+
+{- Takes a window and GUI, returns a GUI containing that window -}
 addWindowToGUI :: Window -> GUI -> GUI
-addWindowToGUI w gui = let newWindowsList = mappend [w] $ windows gui
-                           newID = lastWindowID gui + 1 in
-                         guiSafetyCheck $ gui { windows = newWindowsList, lastWindowID = newID }
+addWindowToGUI w gui = let newGUI = mappend gui [w] in
+                         guiSafetyCheck newGUI
 
 {- Creates a window and immediatly places it into a GUI -}
-createGUIWindow :: WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) -> Maybe CInt -> Maybe CInt -> Maybe Color -> Maybe Color
-                   -> GUI -> GUI
-createGUIWindow wType dmensions minDimensions maxDimensions tBarHeight bSize bColor tBarColor oldGUI =
-  let newWindow = createWindow (lastWindowID oldGUI) wType dmensions
-                  minDimensions maxDimensions bSize bColor in
+createGUIWindow :: WindowName -> WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) -> Maybe CInt ->
+          Maybe CInt -> Maybe Color -> Maybe Color -> Maybe Color -> GUI -> GUI
+createGUIWindow windowName wType dmensions minDimensions maxDimensions tBarHeight bSize bColor tBarColor backColor oldGUI =
+  let newWindow = createWindow windowName wType dmensions
+                  minDimensions maxDimensions bSize bColor backColor in
     addWindowToGUI newWindow oldGUI
 
 splitSurface :: SDL.Surface -> CInt -> CInt -> IO [SDL.Surface]
@@ -185,13 +185,12 @@ gotSomething Nothing = False
 replaceAtIndex :: Int -> a -> [a] -> [a]
 replaceAtIndex index newItem lst = a ++ (newItem:b) where (a, _:b) = splitAt index lst
 
-{- The windowID of the newWindow has to be the same as the old one.
-   This way we don't need to keep passing a targetID to the function just to "update" the gui -}
+{- The windowName of the newWindow has to be the same as the old one.
+  The safety window check should ensure that -}
 updateGUI :: Window -> GUI -> GUI
-updateGUI newWindow gui = let oldWindows = windows gui in
-                            gui {windows = go oldWindows} where
+updateGUI newWindow gui = go gui where
   go [] = []
-  go (window:rest) = if windowID window == windowID newWindow
+  go (window:rest) = if windowName window == windowName newWindow
                      then newWindow : rest
                      else window : go rest
 
@@ -230,29 +229,28 @@ updateExpandedWindow (SDL.V2 mx my) expandedWindow oldGUI =
 guiHandleClick :: SDL.InputMotion -> SDL.MouseButton -> SDL.Point SDL.V2 CInt -> GUI -> GUI
 guiHandleClick motion button clickCoords oldGUI | motion == SDL.Pressed
                                                   && button == SDL.ButtonLeft =
-                                                          case clickInsideGUI clickCoords guiWindows of
+                                                          case clickInsideGUI clickCoords oldGUI of
                                                             Just w -> setDragging w oldGUI
-                                                            Nothing -> case clickInsideBorder clickCoords guiWindows of
+                                                            Nothing -> case clickInsideBorder clickCoords oldGUI of
                                                                          Nothing -> oldGUI
                                                                          Just w -> setExpansion clickCoords w oldGUI
                                                 | motion == SDL.Released
                                                   && button == SDL.ButtonLeft
-                                                  && windowBeingDragged guiWindows =
-                                                          let draggedWindow = fromJust $ getDraggedWindow guiWindows in
+                                                  && windowBeingDragged oldGUI =
+                                                          let draggedWindow = fromJust $ getDraggedWindow oldGUI in
                                                             unsetDragging draggedWindow oldGUI
                                                 | motion == SDL.Released
                                                   && button == SDL.ButtonLeft
-                                                  && windowBeingExpanded guiWindows =
-                                                          let expandedWindow = fromJust $ getExpandedWindow guiWindows in
+                                                  && windowBeingExpanded oldGUI =
+                                                          let expandedWindow = fromJust $ getExpandedWindow oldGUI in
                                                             unsetExpansion expandedWindow oldGUI
                                                 | otherwise = oldGUI
-                                            where guiWindows = windows oldGUI
+
 
 guiHandleMotion :: SDL.V2 CInt -> GUI -> GUI
-guiHandleMotion motion oldGUI | windowBeingDragged guiWindows = updateDraggedWindow motion (fromJust $ getDraggedWindow guiWindows) oldGUI
-                              | windowBeingExpanded guiWindows = updateExpandedWindow motion (fromJust $ getExpandedWindow guiWindows) oldGUI
+guiHandleMotion motion oldGUI | windowBeingDragged oldGUI = updateDraggedWindow motion (fromJust $ getDraggedWindow oldGUI) oldGUI
+                              | windowBeingExpanded oldGUI = updateExpandedWindow motion (fromJust $ getExpandedWindow oldGUI) oldGUI
                               | otherwise = oldGUI
-                        where guiWindows = windows oldGUI
 
 getMaxOffset :: Window -> CInt
 getMaxOffset w = let (HTMLWindow (html, _, _)) = windowType w
@@ -265,11 +263,10 @@ getMaxOffset w = let (HTMLWindow (html, _, _)) = windowType w
 
 guiHandleScrolling :: SDL.V2 CInt -> GUI -> IO GUI
 guiHandleScrolling (SDL.V2 _ dy) oldGUI = do
-  let oldWindows = windows oldGUI
-      dy' = -dy -- The default scrolling direction is a little weird so we need to flip it
+  let dy' = -dy -- The default scrolling direction is a little weird so we need to flip it
 
   mouseCoords <- SDL.getAbsoluteMouseLocation
-  case clickInsideGUI mouseCoords oldWindows of
+  case clickInsideGUI mouseCoords oldGUI of
     Nothing -> return oldGUI
     Just w -> let maxOffset = getMaxOffset w
                   prevOffset = scrollingOffset w
@@ -318,16 +315,21 @@ genHTMLTextures render font htmlDOC = do
   go (Break _) = return []
   go _ = return []
 
-reloadHTMLVar :: SDL.Renderer -> SDL.Font.Font -> Window -> HTMLVar -> GUI -> IO GUI
-reloadHTMLVar render font w htmlVar oldGUI =
-  do
-  let (HTMLWindow (_, _, rawText)) = windowType w
+loadVarTable :: [HTMLVar] -> String -> String
+loadVarTable htmlVars html = foldl (flip loadVariable) html htmlVars
 
-  let htmlText' = loadVariables htmlVar rawText
+reloadHTMLVar :: SDL.Renderer -> SDL.Font.Font -> Window -> HTMLVar -> GUI -> IO GUI
+reloadHTMLVar render font w (varName, varValue) oldGUI =
+  do
+  let (HTMLWindow (_, _, (rawText, varTable))) = windowType w
+      newVarTable = fromMaybe (varTable ++ [(varName, varValue)]) $ lookupReplace varTable varName varValue
+      htmlText' = loadVarTable newVarTable rawText
       newParsedHTML = fst $ head $ runParser parseHTML htmlText'
 
   newTextures <- genHTMLTextures render font newParsedHTML
-  return $ updateGUI (modifyWindow $ w { windowType = HTMLWindow (newParsedHTML, newTextures, htmlText')}) oldGUI
+  return $ updateGUI
+    (modifyWindow $ w { windowType = HTMLWindow (newParsedHTML, newTextures, (rawText, newVarTable))}) oldGUI
+
 
 {- Convenience function so we don't forget to load our variables
    Remember that the order that the variables are given DO matter! -}
@@ -337,4 +339,4 @@ loadHTMLFile fileName vars = do
   htmlText <- readFile fileName
   return $ go vars htmlText where
   go [] res = res
-  go (htmlVar:rest) res = go rest (loadVariables htmlVar res)
+  go (htmlVar:rest) res = go rest (loadVariable htmlVar res)

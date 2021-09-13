@@ -59,6 +59,7 @@ defaultTBarHeight, defaultBSize :: CInt
 defaultTBarHeight = 10
 defaultBSize = 10
 
-defaultBColor, defaultTBarColor :: Color
+defaultBColor, defaultBackgroundColor, defaultTBarColor :: Color
 defaultBColor = white
+defaultBackgroundColor = black
 defaultTBarColor = blue

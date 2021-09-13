@@ -17,10 +17,10 @@ data ClickedBorder = LeftBorder | TopBorder | RightBorder | BottomBorder | NoBor
    textures for a single paragraph so we can format it correctly, and since we
    need multiple paragraphs, we need [[SDL.Texture]] -}
 
-newtype WType = HTMLWindow ([HTML], [[SDL.Texture]], String)
+newtype WType = HTMLWindow ([HTML], [[SDL.Texture]], (String, [HTMLVar]))
 
 data Window = Window {
-  windowID :: ID,
+  windowName :: String,
   windowType :: WType,
   dimensions :: SDL.Rectangle CInt,
   minDimensions :: (CInt, CInt),
@@ -29,18 +29,16 @@ data Window = Window {
   borderSize :: CInt,
   beingDragged :: Bool,
   beingExpanded :: (Bool, ClickedBorder),
-  borderColor :: Color
+  borderColor :: Color,
+  backgroundColor :: Color
 }
 
-data GUI = GUI {
-  windows :: [Window],
-  lastWindowID :: ID
-}
+type GUI = [Window]
 
 type RenderTree = [RenderTreeNode]
 type RenderTreeNode = (SDL.Rectangle CInt, HTML)
 
-type ID = Int
+type WindowName = String
 type Color = SDL.V4 Word8
 
 type FontSize = CInt

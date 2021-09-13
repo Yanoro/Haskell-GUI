@@ -17,6 +17,7 @@ import Control.Monad
 {- TODO
   Remove transparency in the background
   Multiple changes to variables inside of html file
+  Add a new way to find the windows that you need, maybe have windows have names?
   Add scrolling
   Add dynamic events to the windows
 -}
@@ -66,15 +67,15 @@ main = do
 
   let vars = [("$VAR1", "Death"), ("$VAR2", "10"), ("$VAR3", "LIFE")]
       fileName = "../assets/testFile.html"
-  unparsedHTML <- loadHTMLFile fileName vars
+  rawHTML <- loadHTMLFile fileName vars
 
-  let parsedHTML = fst $ head $ runParser parseHTML unparsedHTML
+  let parsedHTML = fst $ head $ runParser parseHTML rawHTML
   htmlTexts <- genHTMLTextures renderer font parsedHTML
 
   SDL.Font.setHinting font SDL.Font.Mono
 
-  let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts, unparsedHTML)) Nothing Nothing Nothing Nothing
-                  Nothing Nothing Nothing emptyGUI
+  let startGUI = createGUIWindow "Start Window" (HTMLWindow (parsedHTML, htmlTexts, (rawHTML, vars))) Nothing Nothing Nothing Nothing
+                  Nothing Nothing Nothing Nothing emptyGUI
 
   loop renderer font startGUI
   SDL.destroyWindow window
