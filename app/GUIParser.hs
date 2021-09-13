@@ -21,6 +21,7 @@ instance Alternative Parser where
   empty = Parser $ const []
   pa <|> pb = Parser $ \s -> runParser pa s ++ runParser pb s
 
+
 newtype Parser a = Parser {
   runParser :: String -> [(a, String)]
 }
@@ -107,12 +108,15 @@ replaceWord str oldWord newWord = unwords $ fst $ foldl (\(newStrWords, foundIt)
                                                           if currentStr == oldWord && not foundIt
                                                           then (newStrWords ++ [newWord], True)
                                                           else (newStrWords ++ [currentStr], foundIt)) ([], False) $ words str
-
+{-
 {- The Packs are ugly i known sue me :) -}
 loadVariables :: [(String, String)] -> String -> String
 loadVariables [] html = html
 loadVariables ((varName, varValue):rest) html = let newHTML = T.replace (T.pack varName) (T.pack varValue) (T.pack html) in
   loadVariables rest (T.unpack newHTML)
+-}
+loadVariables :: HTMLVar -> String -> String
+loadVariables (varName, varValue) html = T.unpack $ T.replace (T.pack varName) (T.pack varValue) (T.pack html)
 
 parseBreak :: Parser HTML
 parseBreak = (\_ param _ -> let breakSize = fromMaybe defaultBreakSize $ maybeRead $ attempt (boolToMaybe $ all isDigit) [param] in

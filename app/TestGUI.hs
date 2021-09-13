@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
+module TestGUI where
+
 import DrawGUI
 import GUIDataTypes
 import GUIParser
@@ -13,8 +15,7 @@ import SDL.Video.Renderer
 import Control.Monad
 
 {- TODO
-
-:
+  Remove transparency in the background
   Multiple changes to variables inside of html file
   Add scrolling
   Add dynamic events to the windows
@@ -72,7 +73,7 @@ main = do
 
   SDL.Font.setHinting font SDL.Font.Mono
 
-  let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts, (unparsedHTML, fileName, vars))) Nothing Nothing Nothing Nothing
+  let startGUI = createGUIWindow (HTMLWindow (parsedHTML, htmlTexts, unparsedHTML)) Nothing Nothing Nothing Nothing
                   Nothing Nothing Nothing emptyGUI
 
   loop renderer font startGUI

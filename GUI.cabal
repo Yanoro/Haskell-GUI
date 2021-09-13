@@ -44,6 +44,7 @@ executable GUI-exe
       GUIConstants
       GUIDataTypes
       GUIParser
+      TestGUI
       WindowUtils
       Paths_GUI
   hs-source-dirs:

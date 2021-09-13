@@ -45,6 +45,9 @@ genRenderNode (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) (Break breakSi
                                         (SDL.V2 (dx - 2 * borderDistance) breakSize) in
     (drawRect, renderNode)
 
+findWindowByID :: ID -> GUI -> Maybe Window
+findWindowByID targetID gui = getFirst (\w -> windowID w == targetID) $ windows gui
+
 unique :: (Eq a) => [a] -> Bool
 unique [] = True
 unique (x:xs) = notElem x xs && unique xs
@@ -287,11 +290,14 @@ guiHandleEvent (SDL.MouseWheelEvent (SDL.MouseWheelEventData _ _ scrolling _)) o
                                                                 guiHandleScrolling (fromIntegral <$> scrolling) oldGUI
 guiHandleEvent _ oldGUI = return oldGUI
 
-lookupReplace :: Eq a => [(a, b)] -> a -> b -> [(a, b)]
-lookupReplace [] _ _ = []
-lookupReplace ((currentKey, currentItem):rest) key replacement = if key == currentKey
-                                                                 then (key, replacement) : rest
-                                                                 else (key, currentItem) : lookupReplace rest key replacement
+lookupReplace :: Eq a => [(a, b)] -> a -> b -> Maybe [(a, b)]
+lookupReplace [] _ _ = Nothing
+lookupReplace table key replacement = go table (Just []) where
+  go [] _ = Nothing
+  go ((currentKey, currentItem):rest) iter =
+    if key == currentKey
+    then (++ ((key, replacement) :rest)) <$> iter
+    else go rest ((++ [(currentKey, currentItem)]) <$> iter)
 
 -- Generates for each html tag their required textures, in this case only paragraph needs it.
 -- It's important that at the stage where the html gets drawn, the list of html tags given is the
@@ -313,20 +319,22 @@ genHTMLTextures render font htmlDOC = do
   go _ = return []
 
 reloadHTMLVar :: SDL.Renderer -> SDL.Font.Font -> Window -> HTMLVar -> GUI -> IO GUI
-reloadHTMLVar render font w (varName, varValue) oldGUI =
+reloadHTMLVar render font w htmlVar oldGUI =
   do
-  let (HTMLWindow (_, _, (_, fileName, varTable))) = windowType w
-      newVarTable = lookupReplace varTable varName varValue
-  rawText <- readFile fileName
-  let htmlText' = loadVariables newVarTable rawText
+  let (HTMLWindow (_, _, rawText)) = windowType w
+
+  let htmlText' = loadVariables htmlVar rawText
       newParsedHTML = fst $ head $ runParser parseHTML htmlText'
+
   newTextures <- genHTMLTextures render font newParsedHTML
-  return $ updateGUI (modifyWindow $ w { windowType = HTMLWindow (newParsedHTML, newTextures, (htmlText', fileName, newVarTable))}) oldGUI
+  return $ updateGUI (modifyWindow $ w { windowType = HTMLWindow (newParsedHTML, newTextures, htmlText')}) oldGUI
 
 {- Convenience function so we don't forget to load our variables
    Remember that the order that the variables are given DO matter! -}
 
 loadHTMLFile :: FilePath -> [HTMLVar] -> IO String
 loadHTMLFile fileName vars = do
-  html <- readFile fileName
-  return $ loadVariables vars html
+  htmlText <- readFile fileName
+  return $ go vars htmlText where
+  go [] res = res
+  go (htmlVar:rest) res = go rest (loadVariables htmlVar res)

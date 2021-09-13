@@ -47,9 +47,8 @@ destRects fSize msgLen (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) =
                                                                                               (msgRem - fromIntegral lineSize)
                             where fontSize = fromIntegral fSize
 
--- Draws a HTML Tag, "consuming" a texture if needed
-drawHTML :: SDL.Renderer -> Window -> SDL.Rectangle CInt -> [[SDL.Texture]] -> HTML -> IO [[SDL.Texture]]
-drawHTML render w drawRect (textures:rest) (Paragraph p color fontSize) = do
+drawText :: SDL.Renderer -> Window -> SDL.Rectangle CInt -> [SDL.Texture] -> String -> CInt -> IO ()
+drawText render w drawRect textures msg fontSize = do
   infoTexts <- mapM (\text -> do
                         textInfo <- SDL.queryTexture text
                         return (text, textInfo)) textures
@@ -57,7 +56,7 @@ drawHTML render w drawRect (textures:rest) (Paragraph p color fontSize) = do
       offset = scrollingOffset w
       sdRects = filter (rectInsideRect drawFrame . snd) $
                 map (\(a, SDL.Rectangle (SDL.P (SDL.V2 x y)) d) -> (a, SDL.Rectangle (SDL.P (SDL.V2 x (y - offset))) d))
-                $ srcDestRects fontSize (T.length $ T.pack p) infoTexts drawRect
+                $ srcDestRects fontSize (T.length $ T.pack msg) infoTexts drawRect
       dRects = map snd sdRects
 
   mapM_ (\((text, s), d) -> do
@@ -67,6 +66,11 @@ drawHTML render w drawRect (textures:rest) (Paragraph p color fontSize) = do
             SDL.rendererDrawColor render SDL.$= GUIConstants.red
             SDL.drawRect render (Just d)) dRects
 
+-- Draws a HTML Tag, "consuming" a texture if needed
+drawHTML :: SDL.Renderer -> Window -> SDL.Rectangle CInt -> [[SDL.Texture]] -> HTML -> IO [[SDL.Texture]]
+drawHTML render w drawRect (current_texture:rest) (Paragraph msg color fontSize) = do
+  -- mapM_ (\(msg, texture) -> drawText render w drawRect texture msg fontSize) textures
+  drawText render w drawRect current_texture msg fontSize
   return rest
 
 drawHTML _ _ _ textures _ = return textures
@@ -79,6 +83,7 @@ drawWindowContents render w _ drawRect (HTMLWindow (htmlDOC, texts, _)) = do
 
   foldM_ (\textures (html, rect) -> do
                  drawHTML render w rect textures html) texts (zip htmlDOC renderTree)
+
 
 drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
 drawWindow render font w = do
