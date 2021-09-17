@@ -55,9 +55,10 @@ defaultMinDimensions, defaultMaxDimensions :: (CInt, CInt)
 defaultMinDimensions = (300, 300)
 defaultMaxDimensions = (800, 800)
 
-defaultTBarHeight, defaultBSize :: CInt
+defaultTBarHeight, defaultBSize, borderHitboxScaling :: CInt
 defaultTBarHeight = 10
-defaultBSize = 10
+defaultBSize = 1
+borderHitboxScaling = 20
 
 defaultBColor, defaultBackgroundColor, defaultTBarColor :: Color
 defaultBColor = white

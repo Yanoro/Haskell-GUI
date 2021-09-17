@@ -56,6 +56,7 @@ unique (x:xs) = notElem x xs && unique xs
 guiSafetyCheck :: GUI -> GUI
 guiSafetyCheck gui = gui
 
+--TODO: There is a better way to do this, just create a defaultWindow variable and remove all the maybes
 createWindow :: WindowName -> WType -> Maybe (SDL.Rectangle CInt) -> Maybe (CInt, CInt) -> Maybe (CInt, CInt) ->
                 Maybe CInt -> Maybe Color -> Maybe Color -> Window
 createWindow wName wType maybeDimensions maybeMinDimensions maybeMaxDimensions maybeBSize maybeBorderColor maybeBackgroundColor =
@@ -70,7 +71,8 @@ createWindow wName wType maybeDimensions maybeMinDimensions maybeMaxDimensions m
       backColor = fromMaybe defaultBackgroundColor maybeBackgroundColor
       newWindow = windowSafetyCheck $ Window { windowName = wName, windowType = wType, dimensions = dmensions, minDimensions = miDimensions,
                                                maxDimensions = maDimensions, borderSize = bSize, beingDragged = False, scrollingOffset = 0,
-                                               beingExpanded = (False, NoBorder), borderColor = bColor, backgroundColor = backColor} in
+                                               beingExpanded = (False, NoBorder), borderColor = bColor, backgroundColor = backColor,
+                                               focused = False} in
     if width < minWidth || width > maxWidth || height < minHeight || height > maxHeight
     then error "[!] Invalid dimensions for window"
     else newWindow
@@ -130,12 +132,40 @@ pointInsideRectangle (SDL.Rectangle (SDL.P (SDL.V2 xStart yStart)) (SDL.V2 width
 clickInsideGUI :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
 clickInsideGUI click = getFirst (\x -> dimensions x `pointInsideRectangle` click)
 
+scaleRect :: CInt -> SDL.Rectangle CInt -> SDL.Rectangle CInt
+scaleRect scale (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) = SDL.Rectangle (SDL.P (SDL.V2 (x - scale) (y - scale)))
+                                                                                    (SDL.V2 (dx + 2 * scale) (dy + scale))
+
+getBorderHitboxes :: Window -> [SDL.Rectangle CInt]
+getBorderHitboxes window = let borders = getRectBorders (borderSize window) (dimensions window)
+                               scaling = borderHitboxScaling
+                               leftBorder = head borders
+                               topBorder = borders !! 1
+                               rightBorder = borders !! 2
+                               (SDL.Rectangle (SDL.P (SDL.V2 xb yb)) (SDL.V2 dxb dyb)) = borders !! 3
+                               getVertHitbox (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
+                                 SDL.Rectangle (SDL.P (SDL.V2 (x - scaling) (y - scaling)))
+                                                      (SDL.V2 (dx + 2 * scaling) (dy + scaling))
+                               getHorizHitbox (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
+                                 SDL.Rectangle (SDL.P (SDL.V2 (x - scaling) (y - scaling)))
+                                                      (SDL.V2 (dx + 2 * scaling) (dy + scaling))
+                               newBottomBorder = SDL.Rectangle (SDL.P (SDL.V2 (xb - scaling) yb))
+                                                                      (SDL.V2 (dxb + 2 * scaling) (dyb + scaling)) in
+                             [getVertHitbox leftBorder, getHorizHitbox topBorder, getVertHitbox rightBorder, newBottomBorder]
+
+
 clickInsideBorder :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
 clickInsideBorder _ [] = Nothing
-clickInsideBorder click (window:rest) = let borders = getRectBorders (borderSize window) (dimensions window) in
+clickInsideBorder click (window:rest) = let borders = getBorderHitboxes window in
                                           if any (`pointInsideRectangle` click) borders
                                           then Just window
                                           else clickInsideBorder click rest
+
+-- Update a window in a gui multiple times
+updateGUI' :: [Window -> GUI -> GUI] -> Window -> GUI -> GUI
+updateGUI' funs w oldGUI = let wName = windowName w in
+                                  foldl (\currentGUI f -> let newWindow = fromJust $ findWindowByName wName currentGUI in
+                                                            f newWindow currentGUI) oldGUI funs
 
 getRectBorders :: CInt -> SDL.Rectangle CInt -> [SDL.Rectangle CInt]
 getRectBorders bSize (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) =
@@ -151,10 +181,17 @@ setDragging oldWindow = updateGUI (modifyWindow $ oldWindow {beingDragged = True
 unsetDragging :: Window -> GUI -> GUI
 unsetDragging oldWindow = updateGUI (modifyWindow $ oldWindow {beingDragged = False})
 
+-- unfocus all windows on GUI
+unfocusGUI :: GUI -> GUI
+unfocusGUI = map (\window -> modifyWindow $ window { focused = False } )
+
 setExpansion :: SDL.Point SDL.V2 CInt -> Window -> GUI -> GUI
 setExpansion click oldWindow =
-  let borders = getRectBorders (borderSize oldWindow) (dimensions oldWindow)
-      (SDL.Rectangle (SDL.P (SDL.V2 x' y')) _) = fromJust $ getFirst (`pointInsideRectangle` click) borders
+  let hitboxBorders = getBorderHitboxes oldWindow
+      clickedHitbox = fromJust $ getFirst (`pointInsideRectangle` click) hitboxBorders
+      -- Get the rectangle shown in the screen from the hitbox
+      (SDL.Rectangle (SDL.P (SDL.V2 x' y')) _) = clickedHitbox
+      borders = hitboxBorders
       rectCornerTable = zip (map (\(SDL.Rectangle (SDL.P (SDL.V2 m n)) _) -> (m, n)) borders) [LeftBorder, TopBorder, RightBorder, BottomBorder]
 
       clickedBorder = fromMaybe NoBorder $ lookup clickedBorderCoords rectCornerTable
@@ -230,7 +267,12 @@ guiHandleClick :: SDL.InputMotion -> SDL.MouseButton -> SDL.Point SDL.V2 CInt ->
 guiHandleClick motion button clickCoords oldGUI | motion == SDL.Pressed
                                                   && button == SDL.ButtonLeft =
                                                           case clickInsideGUI clickCoords oldGUI of
-                                                            Just w -> setDragging w oldGUI
+                                                            Just w ->
+                                                              updateGUI' [\_ gui -> unfocusGUI gui,
+                                                                          setDragging,
+                                                                          (\wind gui ->
+                                                                         updateGUI (modifyWindow $ wind { focused = True }) gui)] w oldGUI
+
                                                             Nothing -> case clickInsideBorder clickCoords oldGUI of
                                                                          Nothing -> oldGUI
                                                                          Just w -> setExpansion clickCoords w oldGUI

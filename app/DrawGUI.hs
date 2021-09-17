@@ -66,6 +66,19 @@ drawText render w drawRect textures msg fontSize = do
             SDL.rendererDrawColor render SDL.$= GUIConstants.red
             SDL.drawRect render (Just d)) dRects
 
+
+-- Interprets the point as coordinates relative to the top left corner of the draw rect
+turnPointRelative :: SDL.Point SDL.V2 CInt -> Window -> Maybe (SDL.Point SDL.V2 CInt)
+turnPointRelative (SDL.P (SDL.V2 x y)) w = let (SDL.Rectangle (SDL.P (SDL.V2 n m)) (SDL.V2 dn dm)) = dimensions w in
+                                             if x + n > n + dn || y + m > m + dm
+                                             then Nothing else Just $ SDL.P (SDL.V2 (x + n) (y + m))
+
+drawInsideOfWindow :: (SDL.Rectangle CInt -> IO ()) -> SDL.Rectangle CInt -> Window -> IO ()
+drawInsideOfWindow drawFun (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx dy)) w =
+  do let (SDL.Rectangle (SDL.P (SDL.V2 n m)) (SDL.V2 nx mx)) = dimensions w
+         adjustedRect = SDL.Rectangle (SDL.P (SDL.V2 (x + n) (y + m))) (SDL.V2 dx dy)
+     drawFun adjustedRect
+
 -- Draws a HTML Tag, "consuming" a texture if needed
 drawHTML :: SDL.Renderer -> Window -> SDL.Rectangle CInt -> [[SDL.Texture]] -> HTML -> IO [[SDL.Texture]]
 drawHTML render w drawRect (current_texture:rest) (Paragraph msg color fontSize) = do
@@ -75,8 +88,8 @@ drawHTML render w drawRect (current_texture:rest) (Paragraph msg color fontSize)
 
 drawHTML _ _ _ textures _ = return textures
 
---drawHTML render drawRect (textures) (Break) = return textures
 
+-- TODO: Maybe remove the font argument and drawRect?
 drawWindowContents :: SDL.Renderer -> Window -> SDL.Font.Font -> SDL.Rectangle CInt -> WType -> IO ()
 drawWindowContents render w _ drawRect (HTMLWindow (htmlDOC, texts, _)) = do
   let renderTree = genRenderTree drawRect htmlDOC
@@ -84,6 +97,7 @@ drawWindowContents render w _ drawRect (HTMLWindow (htmlDOC, texts, _)) = do
   foldM_ (\textures (html, rect) -> do
                  drawHTML render w rect textures html) texts (zip htmlDOC renderTree)
 
+drawWindowContents render w _ drawRect StandardWindow = return ()
 
 drawWindow :: SDL.Renderer -> SDL.Font.Font -> Window -> IO ()
 drawWindow render font w = do
@@ -95,9 +109,13 @@ drawWindow render font w = do
       bSize = borderSize w
       frameBorders = getRectBorders bSize drawRect
 
+
   SDL.rendererDrawColor render SDL.$= bColor
 
   mapM_ (SDL.fillRect render . Just) frameBorders --Draw Main Frame
+
+--  SDL.rendererDrawColor render SDL.$= red
+--  mapM_ (SDL.fillRect render . Just) hitboxes
 
   SDL.rendererDrawColor render SDL.$= backColor
 
@@ -105,5 +123,6 @@ drawWindow render font w = do
 
   drawWindowContents render w font drawRect wType
 
+{- This function should usually be the last drawing function that the gui windows are not transparent-}
 drawGUI :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()
 drawGUI render font = mapM_ (drawWindow render font)

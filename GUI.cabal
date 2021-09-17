@@ -38,13 +38,12 @@ library
   default-language: Haskell2010
 
 executable GUI-exe
-  main-is: Main.hs
+  main-is: TestGUI.hs
   other-modules:
       DrawGUI
       GUIConstants
       GUIDataTypes
       GUIParser
-      TestGUI
       WindowUtils
       Paths_GUI
   hs-source-dirs:

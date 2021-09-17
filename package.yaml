@@ -30,7 +30,7 @@ library:
 
 executables:
   GUI-exe:
-    main:                Main.hs
+    main:                TestGUI.hs
     source-dirs:         app
     ghc-options:
     - -threaded

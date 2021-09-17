@@ -1,3 +1,4 @@
+{-# LANGUAGE InstanceSigs #-}
 module GUIDataTypes where
 
 import qualified SDL
@@ -13,12 +14,15 @@ data HTML = EmptySpace | Paragraph String Color FontSize | Break CInt | Img File
 
 data ClickedBorder = LeftBorder | TopBorder | RightBorder | BottomBorder | NoBorder deriving (Show, Eq)
 
+data WType = HTMLWindow ([HTML], [[SDL.Texture]], (String, [HTMLVar]))
+           | StandardWindow
+
 {- The reason that we need a [[SDL.Texture]] is that we need to create multiple
    textures for a single paragraph so we can format it correctly, and since we
-   need multiple paragraphs, we need [[SDL.Texture]] -}
+   need multiple paragraphs, we need [[SDL.Texture]]
 
-newtype WType = HTMLWindow ([HTML], [[SDL.Texture]], (String, [HTMLVar]))
-
+   A StandardWindow is a window that is only capable of having drawings inside of it
+   i.e no reading html capabilities -}
 data Window = Window {
   windowName :: String,
   windowType :: WType,
@@ -29,9 +33,12 @@ data Window = Window {
   borderSize :: CInt,
   beingDragged :: Bool,
   beingExpanded :: (Bool, ClickedBorder),
+  focused :: Bool,
   borderColor :: Color,
   backgroundColor :: Color
 }
+
+--data GUITrans = GUITransform (GUI -> GUI)
 
 type GUI = [Window]
 

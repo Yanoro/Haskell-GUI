@@ -7,14 +7,15 @@ import GUIDataTypes
 import GUIParser
 import WindowUtils
 
-
 import qualified SDL
 import qualified SDL.Font
 
 import SDL.Video.Renderer
 import Control.Monad
+import Data.Maybe
 
-{- TODO
+{- TODO:
+  PRETTY BORDERS
   Handle what happens with multiple windows with the same name
   Add dynamic events to the windows
 -}
@@ -48,7 +49,16 @@ loop render font gui = do
   SDL.rendererDrawColor render SDL.$= SDL.V4 0 0 0 0
 
   SDL.clear render
+  let wind = fromJust $ findWindowByName "Start Window" gui
+      relativePoint = turnPointRelative (SDL.P (SDL.V2 500 500)) wind
+
+  print $ focused wind
+
+--  SDL.drawPoint render relativePoint
   drawGUI render font gui
+--  SDL.drawPoint render (SDL.P (SDL.V2 200 200))
+
+
   SDL.present render
 
   unless quitKeyPressed $ loop render font newGUI
@@ -71,7 +81,7 @@ main = do
 
   SDL.Font.setHinting font SDL.Font.Mono
 
-  let startGUI = createGUIWindow "Start Window" (HTMLWindow (parsedHTML, htmlTexts, (rawHTML, vars))) Nothing Nothing Nothing Nothing
+  let startGUI = createGUIWindow "Start Window" StandardWindow Nothing Nothing Nothing Nothing
                   Nothing Nothing Nothing Nothing emptyGUI
 
   loop renderer font startGUI
