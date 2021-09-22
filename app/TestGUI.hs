@@ -15,7 +15,7 @@ import Control.Monad
 import Data.Maybe
 
 {- TODO:
-  PRETTY BORDERS
+  Make it so there is a way to make drawing made inside of the windows 'part' of the window, so that those drawing are part of the priority system
   Handle what happens with multiple windows with the same name
   Add dynamic events to the windows
 -}

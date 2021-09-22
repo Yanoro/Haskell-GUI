@@ -46,7 +46,6 @@ borderDistance :: CInt
 borderDistance = 10
 
 {- Default parameters for a window -}
-
 defaultDimensions :: Rectangle CInt
 defaultDimensions = Rectangle (SDL.P (SDL.V2 0 0)) (SDL.V2 500 500)
 

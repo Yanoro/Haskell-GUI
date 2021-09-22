@@ -104,11 +104,12 @@ drawWindow render font w = do
   let drawRect = dimensions w
       bColor = borderColor w
       backColor = backgroundColor w
+      drawingFun = drawFun w
+
       (SDL.Rectangle (SDL.P (SDL.V2 x y)) (SDL.V2 dx _)) = drawRect
       wType = windowType w
       bSize = borderSize w
       frameBorders = getRectBorders bSize drawRect
-
 
   SDL.rendererDrawColor render SDL.$= bColor
 
@@ -122,6 +123,11 @@ drawWindow render font w = do
   SDL.fillRect render (Just drawRect)
 
   drawWindowContents render w font drawRect wType
+
+  case drawingFun of
+    Nothing -> return ()
+    Just fun -> do fun
+                   return ()
 
 {- This function should usually be the last drawing function that the gui windows are not transparent-}
 drawGUI :: SDL.Renderer -> SDL.Font.Font -> GUI -> IO ()

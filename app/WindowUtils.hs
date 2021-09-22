@@ -72,7 +72,7 @@ createWindow wName wType maybeDimensions maybeMinDimensions maybeMaxDimensions m
       newWindow = windowSafetyCheck $ Window { windowName = wName, windowType = wType, dimensions = dmensions, minDimensions = miDimensions,
                                                maxDimensions = maDimensions, borderSize = bSize, beingDragged = False, scrollingOffset = 0,
                                                beingExpanded = (False, NoBorder), borderColor = bColor, backgroundColor = backColor,
-                                               focused = False} in
+                                               focused = False, drawFun = Nothing} in
     if width < minWidth || width > maxWidth || height < minHeight || height > maxHeight
     then error "[!] Invalid dimensions for window"
     else newWindow
@@ -153,6 +153,13 @@ getBorderHitboxes window = let borders = getRectBorders (borderSize window) (dim
                                                                       (SDL.V2 (dxb + 2 * scaling) (dyb + scaling)) in
                              [getVertHitbox leftBorder, getHorizHitbox topBorder, getVertHitbox rightBorder, newBottomBorder]
 
+-- Makes sure that the priority window is draw last so it doesn't get 'buried' by other windows
+sortGUI :: GUI -> GUI
+sortGUI oldGUI = if any focused oldGUI
+                 then let priorityWindow = fromJust $ getFirst focused oldGUI
+                          rest = filter (not . focused) oldGUI in
+                        mappend rest [priorityWindow]
+                 else oldGUI
 
 clickInsideBorder :: SDL.Point SDL.V2 CInt -> [Window] -> Maybe Window
 clickInsideBorder _ [] = Nothing
@@ -160,6 +167,9 @@ clickInsideBorder click (window:rest) = let borders = getBorderHitboxes window i
                                           if any (`pointInsideRectangle` click) borders
                                           then Just window
                                           else clickInsideBorder click rest
+
+updateDrawingFun :: IO () -> Window -> GUI -> GUI
+updateDrawingFun dFun w = updateGUI (modifyWindow $ w { drawFun = Just dFun})
 
 -- Update a window in a gui multiple times
 updateGUI' :: [Window -> GUI -> GUI] -> Window -> GUI -> GUI
@@ -268,10 +278,11 @@ guiHandleClick motion button clickCoords oldGUI | motion == SDL.Pressed
                                                   && button == SDL.ButtonLeft =
                                                           case clickInsideGUI clickCoords oldGUI of
                                                             Just w ->
+                                                              sortGUI $
                                                               updateGUI' [\_ gui -> unfocusGUI gui,
-                                                                          setDragging,
-                                                                          (\wind gui ->
-                                                                         updateGUI (modifyWindow $ wind { focused = True }) gui)] w oldGUI
+                                                                           setDragging,
+                                                                           (\wind gui ->
+                                                                               updateGUI (modifyWindow $ wind { focused = True }) gui)] w oldGUI
 
                                                             Nothing -> case clickInsideBorder clickCoords oldGUI of
                                                                          Nothing -> oldGUI

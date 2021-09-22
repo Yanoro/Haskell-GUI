@@ -27,6 +27,7 @@ data Window = Window {
   windowName :: String,
   windowType :: WType,
   dimensions :: SDL.Rectangle CInt,
+  drawFun :: Maybe (IO ()),
   minDimensions :: (CInt, CInt),
   maxDimensions :: (CInt, CInt),
   scrollingOffset :: CInt,
